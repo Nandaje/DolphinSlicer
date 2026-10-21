@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Deep ocean slate background -->
+    <path
+        android:fillColor="#0E171F"
+        android:pathData="M0,0h108v108h-108z" />
+    <!-- Subtle teal radial-style geometric glow -->
+    <path
+        android:fillColor="#132832"
+        android:pathData="M54,12 L92,34 L92,74 L54,96 L16,74 L16,34 Z" />
+    <path
+        android:strokeColor="#00C896"
+        android:strokeWidth="1.8"
+        android:fillColor="#00000000"
+        android:pathData="M54,16 L88,36 L88,72 L54,92 L20,72 L20,36 Z" />
+</vector>

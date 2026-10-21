@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 3D Slicer Build Plate Isometric Grid Lines -->
+    <path
+        android:strokeColor="#00A896"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:pathData="M28,75 L54,86 L80,75" />
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M34,80 L54,89 L74,80" />
+
+    <!-- Sleek Leaping Dolphin Silhouette (DolphinSlicer Icon) -->
+    <path
+        android:fillColor="#00BFA5"
+        android:pathData="M22,64 C25,42 42,29 58,30 C61,21 68,17 72,18 C69,24 68,29 70,33 C79,36 85,43 88,49 C91,51 94,53 93,55 C90,56 85,56 81,55 C74,53 64,51 52,55 C41,59 33,66 26,72 C24,69 21,67 22,64 Z" />
+
+    <!-- Cyan Top Highlight Along Dolphin Crest -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M26,58 C31,42 45,32 58,32 C61,24 66,20 70,20 C68,25 68,30 70,34 C78,37 83,43 86,48 C77,45 66,44 54,47 C42,50 33,54 26,58 Z" />
+
+    <!-- Light Silver-White Dolphin Underbelly -->
+    <path
+        android:fillColor="#E2E8F0"
+        android:pathData="M34,62 C44,54 58,51 76,54 C79,55 77,57 73,57 C61,56 49,58 38,64 C35,65 33,64 34,62 Z" />
+
+    <!-- Dolphin Eye -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M78,45 A2.0,2.0 0 1,1 78,49 A2.0,2.0 0 1,1 78,45 Z" />
+</vector>
