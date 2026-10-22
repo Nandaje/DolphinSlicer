@@ -34,3 +34,11 @@
 ```
 
 The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
+
+---
+
+## 👥 Contributors
+
+- **[@Nandaje](https://github.com/Nandaje)** — Creator & Lead Maintainer
+- **Google Gemini 4 Antigravity** *(Google DeepMind)* — AI Engineering & Architecture Contributor
+

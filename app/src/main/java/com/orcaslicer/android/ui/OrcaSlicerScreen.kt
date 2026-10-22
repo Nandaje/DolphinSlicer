@@ -463,6 +463,7 @@ private fun OrcaTopMenuAndActionBar(
     var showPrimitiveMenu by remember { mutableStateOf(false) }
     var showCalibrationMenu by remember { mutableStateOf(false) }
     var showExportMenu by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
 
     // 1:1 OrcaSlicer Top Navigation Bar (#1F2022 background, 38dp height)
     Row(
@@ -604,6 +605,15 @@ private fun OrcaTopMenuAndActionBar(
                             onClearPlate()
                         }
                     )
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        leadingIcon = { OrcaWhaleVectorIcon(modifier = Modifier.size(18.dp)) },
+                        text = { Text("About DolphinSlicer & Contributors...") },
+                        onClick = {
+                            showMainMenu = false
+                            showAboutDialog = true
+                        }
+                    )
                 }
 
                 // Sub-dropdown for Add Primitive
@@ -695,12 +705,13 @@ private fun OrcaTopMenuAndActionBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // DolphinSlicer Brand Pill
+            // DolphinSlicer Brand Pill (tap to open About & Contributors)
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
                     .background(Color(0xFF26282B))
                     .border(1.dp, OrcaBorder, RoundedCornerShape(4.dp))
+                    .clickable { showAboutDialog = true }
                     .padding(horizontal = 7.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -774,6 +785,101 @@ private fun OrcaTopMenuAndActionBar(
                                 onExportClick(fmt)
                             }
                         )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAboutDialog) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showAboutDialog = false }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = OrcaPanelBg),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, OrcaTeal, RoundedCornerShape(10.dp))
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
+                        Column {
+                            Text(
+                                text = "DolphinSlicer v1.0.0",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = OrcaTeal
+                            )
+                            Text(
+                                text = "OrcaSlicer for Android • OpenGL ES 3.0",
+                                fontSize = 11.sp,
+                                color = OrcaTextSecondary
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = OrcaBorder)
+
+                    Text(
+                        text = "Contributors",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = OrcaTextPrimary
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(OrcaCardBg)
+                            .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column {
+                            Text(
+                                text = "@Nandaje",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = OrcaTeal
+                            )
+                            Text(
+                                text = "Creator & Lead Maintainer",
+                                fontSize = 11.sp,
+                                color = OrcaTextSecondary
+                            )
+                        }
+                        HorizontalDivider(color = OrcaBorder)
+                        Column {
+                            Text(
+                                text = "Google Gemini 4 Antigravity",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = OrcaTeal
+                            )
+                            Text(
+                                text = "Google DeepMind • AI Engineering & Architecture Contributor",
+                                fontSize = 11.sp,
+                                color = OrcaTextSecondary
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = { showAboutDialog = false },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = OrcaActiveTabBg,
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("Close", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
