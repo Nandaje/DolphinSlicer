@@ -1743,40 +1743,11 @@ private fun ToolpathLegendRow() {
 
 @Composable
 private fun OrcaWhaleVectorIcon(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        // Leaping Orca Whale Body + Dorsal Fin
-        val bodyPath = Path().apply {
-            moveTo(w * 0.10f, h * 0.65f)
-            cubicTo(w * 0.18f, h * 0.32f, w * 0.42f, h * 0.22f, w * 0.60f, h * 0.24f)
-            // Dorsal fin
-            cubicTo(w * 0.65f, h * 0.08f, w * 0.75f, h * 0.05f, w * 0.78f, h * 0.08f)
-            cubicTo(w * 0.73f, h * 0.18f, w * 0.72f, h * 0.26f, w * 0.76f, h * 0.32f)
-            // Nose / Snout
-            cubicTo(w * 0.90f, h * 0.38f, w * 0.95f, h * 0.52f, w * 0.92f, h * 0.64f)
-            cubicTo(w * 0.85f, h * 0.72f, w * 0.65f, h * 0.66f, w * 0.45f, h * 0.70f)
-            cubicTo(w * 0.30f, h * 0.74f, w * 0.18f, h * 0.82f, w * 0.08f, h * 0.84f)
-            close()
-        }
-        drawPath(bodyPath, color = OrcaTeal)
-
-        // White Orca Eye Patch
-        drawCircle(
-            color = Color.White,
-            radius = w * 0.09f,
-            center = Offset(w * 0.76f, h * 0.44f)
-        )
-
-        // White Belly Highlight
-        val bellyPath = Path().apply {
-            moveTo(w * 0.32f, h * 0.66f)
-            cubicTo(w * 0.48f, h * 0.56f, w * 0.68f, h * 0.56f, w * 0.86f, h * 0.63f)
-            cubicTo(w * 0.72f, h * 0.69f, w * 0.50f, h * 0.67f, w * 0.32f, h * 0.66f)
-            close()
-        }
-        drawPath(bellyPath, color = Color.White)
-    }
+    androidx.compose.foundation.Image(
+        painter = androidx.compose.ui.res.painterResource(id = com.orcaslicer.android.R.drawable.ic_dolphin_logo),
+        contentDescription = "DolphinSlicer Icon",
+        modifier = modifier
+    )
 }
 
 @Composable

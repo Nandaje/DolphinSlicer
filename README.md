@@ -1,4 +1,4 @@
-# 🐬 DolphinSlicer (OrcaSlicer for Android)
+# <img src="docs/screenshots/dolphin-icon.png" alt="DolphinSlicer Icon" width="36" align="center" /> DolphinSlicer (OrcaSlicer for Android)
 
 **DolphinSlicer** is a native Android 3D printing slicer inspired by [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer), featuring hardware-accelerated **OpenGL ES 3.0** 3D rendering, a **1:1 OrcaSlicer desktop UI layout** with adaptive **Portrait & Landscape** support, live official OrcaSlicer server profile synchronization, and a multi-threaded two-pass slicing engine.
 
