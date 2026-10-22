@@ -70,6 +70,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,6 +78,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -181,6 +183,14 @@ fun OrcaSectionGroupHeader(
     }
 }
 
+private fun formatOrcaNumber(value: Float, decimals: Int): String = when (decimals) {
+    0 -> value.toInt().toString()
+    1 -> String.format(Locale.US, "%.1f", value)
+    3 -> String.format(Locale.US, "%.3f", value)
+    else -> String.format(Locale.US, "%.2f", value).trimEnd('0').trimEnd('.')
+        .let { if (it.isEmpty()) "0" else it }
+}
+
 /**
  * 1:1 OrcaSlicer 2-Column Numeric Parameter Row:
  * Left: indented parameter label
@@ -199,14 +209,18 @@ fun OrcaParamNumberRow(
     onValueChange: (Float) -> Unit
 ) {
     var expandedTouchAdjuster by remember { mutableStateOf(false) }
-    val formattedVal = when (decimals) {
-        0 -> value.toInt().toString()
-        1 -> String.format(Locale.US, "%.1f", value)
-        3 -> String.format(Locale.US, "%.3f", value)
-        else -> String.format(Locale.US, "%.2f", value).trimEnd('0').trimEnd('.')
-            .let { if (it.isEmpty()) "0" else it }
+    var isFocused by remember { mutableStateOf(false) }
+    val formattedVal = formatOrcaNumber(value, decimals)
+    var textInput by remember { mutableStateOf(formattedVal) }
+
+    LaunchedEffect(formattedVal, isFocused) {
+        if (!isFocused) {
+            textInput = formattedVal
+        }
     }
-    var textInput by remember(formattedVal) { mutableStateOf(formattedVal) }
+
+    val minAllowed = if (range.start >= 0f) 0f else range.start
+    val maxAllowed = maxOf(range.endInclusive, 10_000_000f)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -235,7 +249,7 @@ fun OrcaParamNumberRow(
                     .background(if (enabled) OrcaInputBg else Color(0xFF232427))
                     .border(
                         width = 1.dp,
-                        color = if (expandedTouchAdjuster) OrcaTealBright else OrcaBorder,
+                        color = if (isFocused || expandedTouchAdjuster) OrcaTealBright else OrcaBorder,
                         shape = RoundedCornerShape(4.dp)
                     )
                     .clickable(enabled = enabled) { expandedTouchAdjuster = !expandedTouchAdjuster }
@@ -247,8 +261,9 @@ fun OrcaParamNumberRow(
                     value = textInput,
                     onValueChange = { raw ->
                         textInput = raw
-                        raw.removeSuffix("%").trim().toFloatOrNull()?.let { parsed ->
-                            onValueChange(parsed.coerceIn(range.start, range.endInclusive))
+                        val cleaned = raw.removeSuffix("%").replace(',', '.').trim()
+                        cleaned.toFloatOrNull()?.let { parsed ->
+                            onValueChange(parsed.coerceIn(minAllowed, maxAllowed))
                         }
                     },
                     enabled = enabled,
@@ -260,19 +275,30 @@ fun OrcaParamNumberRow(
                     ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     cursorBrush = SolidColor(OrcaTealBright),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { focusState ->
+                            isFocused = focusState.isFocused
+                            if (!focusState.isFocused) {
+                                textInput = formatOrcaNumber(value, decimals)
+                            }
+                        }
                 )
                 Text(
                     text = unitText,
                     fontSize = 10.sp,
                     color = OrcaUnitText,
-                    maxLines = 1
+                    maxLines = 1,
+                    modifier = Modifier.clickable(enabled = enabled) { expandedTouchAdjuster = !expandedTouchAdjuster }
                 )
             }
         }
 
         // Touch-friendly expandable [- / Slider / +] bar when row is tapped
         if (expandedTouchAdjuster && enabled) {
+            val sliderMin = minOf(range.start, value)
+            val baseMax = if (range.endInclusive > 2000f) maxOf(500f, value * 1.5f) else range.endInclusive
+            val sliderMax = maxOf(baseMax, value, sliderMin + step)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -289,15 +315,22 @@ fun OrcaParamNumberRow(
                         .size(28.dp)
                         .clip(RoundedCornerShape(4.dp))
                         .background(OrcaElevatedBg)
-                        .clickable { onValueChange((value - step).coerceIn(range.start, range.endInclusive)) },
+                        .clickable {
+                            val next = (value - step).coerceIn(minAllowed, maxAllowed)
+                            onValueChange(next)
+                            textInput = formatOrcaNumber(next, decimals)
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = OrcaTextPrimary, modifier = Modifier.size(14.dp))
                 }
                 Slider(
-                    value = value.coerceIn(range.start, range.endInclusive),
-                    onValueChange = onValueChange,
-                    valueRange = range,
+                    value = value.coerceIn(sliderMin, sliderMax),
+                    onValueChange = { next ->
+                        onValueChange(next)
+                        textInput = formatOrcaNumber(next, decimals)
+                    },
+                    valueRange = sliderMin..sliderMax,
                     colors = SliderDefaults.colors(
                         thumbColor = OrcaTealBright,
                         activeTrackColor = OrcaTeal,
@@ -310,7 +343,11 @@ fun OrcaParamNumberRow(
                         .size(28.dp)
                         .clip(RoundedCornerShape(4.dp))
                         .background(OrcaElevatedBg)
-                        .clickable { onValueChange((value + step).coerceIn(range.start, range.endInclusive)) },
+                        .clickable {
+                            val next = (value + step).coerceIn(minAllowed, maxAllowed)
+                            onValueChange(next)
+                            textInput = formatOrcaNumber(next, decimals)
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Increase", tint = OrcaTextPrimary, modifier = Modifier.size(14.dp))
@@ -2795,6 +2832,65 @@ fun FullProcessSettingsCard(
                     label = "Don't support bridges",
                     checked = proc.dontSupportBridges,
                     onCheckedChange = { b -> viewModel.updateProcess { it.copy(dontSupportBridges = b) } }
+                )
+
+                OrcaSectionGroupHeader(Icons.Default.AutoAwesome, "Tree support")
+                OrcaParamNumberRow(
+                    label = "Tip diameter",
+                    value = proc.treeSupportTipDiameterMm,
+                    unitText = "mm",
+                    range = 0.4f..3.0f,
+                    step = 0.1f,
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(treeSupportTipDiameterMm = v) } }
+                )
+                OrcaParamNumberRow(
+                    label = "Branch distance",
+                    value = proc.treeSupportBranchDistanceMm,
+                    unitText = "mm",
+                    range = 0.2f..10.0f,
+                    step = 0.5f,
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(treeSupportBranchDistanceMm = v) } }
+                )
+                OrcaParamNumberRow(
+                    label = "Branch diameter",
+                    value = proc.treeSupportBranchDiameterMm,
+                    unitText = "mm",
+                    range = 1.0f..10.0f,
+                    step = 0.5f,
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(treeSupportBranchDiameterMm = v) } }
+                )
+                OrcaParamNumberRow(
+                    label = "Branch angle",
+                    value = proc.treeSupportBranchAngleDeg.toFloat(),
+                    unitText = "°",
+                    range = 15f..70f,
+                    step = 5f,
+                    decimals = 0,
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(treeSupportBranchAngleDeg = v.toInt()) } }
+                )
+                OrcaParamNumberRow(
+                    label = "Branch diameter angle",
+                    value = proc.treeSupportBranchDiameterAngleDeg.toFloat(),
+                    unitText = "°",
+                    range = 0f..20f,
+                    step = 1f,
+                    decimals = 0,
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(treeSupportBranchDiameterAngleDeg = v.toInt()) } }
+                )
+                OrcaParamIntStepperRow(
+                    label = "Tree support wall loops",
+                    value = proc.treeSupportWallLoops,
+                    unitText = "loops",
+                    range = 1..4,
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(treeSupportWallLoops = v) } }
+                )
+                OrcaParamNumberRow(
+                    label = "Tree support brim width",
+                    value = proc.treeSupportBrimWidthMm,
+                    unitText = "mm",
+                    range = 0.0f..15.0f,
+                    step = 0.5f,
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(treeSupportBrimWidthMm = v) } }
                 )
             }
         }

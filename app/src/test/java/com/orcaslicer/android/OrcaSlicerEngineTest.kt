@@ -271,4 +271,55 @@ class OrcaSlicerEngineTest {
             .sumOf { l -> l.segments.count { it.type == com.orcaslicer.android.model.ToolpathType.TOP_SURFACE } }
         assertTrue("Intermediate horizontal roof at Z=20mm must generate TOP_SURFACE segments, got $midRoofTopSegs", midRoofTopSegs >= 10)
     }
+
+    @Test
+    fun `OrcaSlicer Normal Support and Tree Organic Support generate distinct multi-layer support structures`() = runTest {
+        val archObj = SceneObject(
+            id = "overhang-arch",
+            name = "OverhangArch",
+            sourceFormat = "PRIMITIVE",
+            mesh = ProceduralMeshes.createOverhangTestArch()
+        )
+        val highPriceFilament = BuiltInPresets.filaments.first().copy(costPerKgUsd = 170f, currencySymbol = "$")
+
+        val normalProcess = BuiltInPresets.processes.first().copy(
+            enableSupport = true,
+            supportType = com.orcaslicer.android.model.SupportType.NORMAL_GRID,
+            supportThresholdAngleDeg = 35
+        )
+        val treeProcess = BuiltInPresets.processes.first().copy(
+            enableSupport = true,
+            supportType = com.orcaslicer.android.model.SupportType.TREE_ORGANIC,
+            supportThresholdAngleDeg = 35
+        )
+
+        val normalSlice = SlicingEngine.sliceScene(
+            objects = listOf(archObj),
+            printer = BuiltInPresets.printers.first(),
+            filament = highPriceFilament,
+            process = normalProcess
+        ).getOrThrow()
+
+        val treeSlice = SlicingEngine.sliceScene(
+            objects = listOf(archObj),
+            printer = BuiltInPresets.printers.first(),
+            filament = highPriceFilament,
+            process = treeProcess
+        ).getOrThrow()
+
+        val normalSupportSegs = normalSlice.layers.sumOf { l ->
+            l.segments.count { it.type == com.orcaslicer.android.model.ToolpathType.SUPPORT }
+        }
+        val treeSupportSegs = treeSlice.layers.sumOf { l ->
+            l.segments.count { it.type == com.orcaslicer.android.model.ToolpathType.SUPPORT }
+        }
+
+        assertTrue("Normal Support must generate support segments ($normalSupportSegs)", normalSupportSegs >= 40)
+        assertTrue("Tree Support must generate organic branch support segments ($treeSupportSegs)", treeSupportSegs >= 40)
+        assertTrue(
+            "Tree Support must steer branches around the arch base plate to root on Layer 0",
+            treeSlice.layers.first().segments.any { it.type == com.orcaslicer.android.model.ToolpathType.SUPPORT }
+        )
+        assertEquals(170.0f, highPriceFilament.spoolTotalCost, 0.01f)
+    }
 }

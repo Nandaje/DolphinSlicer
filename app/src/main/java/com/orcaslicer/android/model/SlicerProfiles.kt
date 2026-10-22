@@ -463,6 +463,13 @@ data class ProcessProfile(
     val supportObjectXyDistanceMm: Float = 0.35f,
     val supportObjectFirstLayerGapMm: Float = 0.20f,
     val dontSupportBridges: Boolean = true,
+    val treeSupportTipDiameterMm: Float = 0.8f,
+    val treeSupportBranchDistanceMm: Float = 1.0f,
+    val treeSupportBranchDiameterMm: Float = 2.0f,
+    val treeSupportBranchAngleDeg: Int = 45,
+    val treeSupportBranchDiameterAngleDeg: Int = 5,
+    val treeSupportWallLoops: Int = 2,
+    val treeSupportBrimWidthMm: Float = 3.0f,
 
     // 5. Multimaterial
     val enablePrimeTower: Boolean = false,

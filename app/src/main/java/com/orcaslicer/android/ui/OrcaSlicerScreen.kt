@@ -778,7 +778,7 @@ private fun OrcaTopMenuAndActionBar(
                         OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
                         Column {
                             Text(
-                                text = "DolphinSlicer v1.1.0",
+                                text = "DolphinSlicer v1.1.1",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = OrcaTealBright
@@ -1755,7 +1755,7 @@ private fun FilamentQuickCalculatorCard(
                 ),
                 valueText = String.format(Locale.US, "%s%.2f/kg", f.currencySymbol, f.costPerKgUsd),
                 value = f.costPerKgUsd,
-                range = 5f..150f,
+                range = 0f..1000000f,
                 step = 1f,
                 onValueChange = { v -> viewModel.updateFilament { it.copy(costPerKgUsd = v) } }
             )
@@ -1870,7 +1870,7 @@ private fun SliceStatisticsSummaryCard(
                 label = "Filament Price (${cur} / kg)",
                 valueText = String.format(Locale.US, "%s%.2f/kg", cur, f.costPerKgUsd),
                 value = f.costPerKgUsd,
-                range = 5.0f..150.0f,
+                range = 0.0f..1000000.0f,
                 step = 1.0f,
                 onValueChange = { v -> viewModel.updateFilament { it.copy(costPerKgUsd = v) } }
             )

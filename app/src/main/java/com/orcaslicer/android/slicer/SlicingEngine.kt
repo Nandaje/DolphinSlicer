@@ -11,6 +11,10 @@ import com.orcaslicer.android.model.ProcessProfile
 import com.orcaslicer.android.model.SceneObject
 import com.orcaslicer.android.model.SliceLayer
 import com.orcaslicer.android.model.SliceResult
+import com.orcaslicer.android.model.SupportBasePattern
+import com.orcaslicer.android.model.SupportInterfacePattern
+import com.orcaslicer.android.model.SupportStyle
+import com.orcaslicer.android.model.SupportType
 import com.orcaslicer.android.model.SurfacePattern
 import com.orcaslicer.android.model.ToolpathSegment
 import com.orcaslicer.android.model.ToolpathType
@@ -24,12 +28,15 @@ import kotlinx.coroutines.coroutineScope
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.tan
 
 object SlicingEngine {
 
@@ -92,13 +99,6 @@ object SlicingEngine {
             }
             val totalLayers = (1 + additionalLayers).coerceIn(1, 4000)
 
-            // Detect overhang points for support generation if enabled
-            val overhangPillars = if (process.enableSupport) {
-                computeSupportPillars(allTriangles, process.supportThresholdAngleDeg)
-            } else {
-                emptyList()
-            }
-
             onProgress(0.15f, "Pass 1/2: Slicing $totalLayers layer contours & perimeters...")
 
             val cpuParallelism = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
@@ -140,6 +140,18 @@ object SlicingEngine {
 
             val allGeometries = geometryChunks.awaitAll().flatten().sortedBy { it.layerIdx }
 
+            // Compute OrcaSlicer Normal or Tree (Organic) Support Plans across all layers if support is enabled
+            val layerSupportPlans: List<LayerSupportPlan> = if (process.enableSupport) {
+                onProgress(0.38f, "Generating OrcaSlicer ${process.supportType.label} structures...")
+                if (process.supportType == SupportType.TREE_ORGANIC || process.supportType == SupportType.TREE_MANUAL) {
+                    computeTreeSupportPlans(allTriangles, allGeometries, process)
+                } else {
+                    computeNormalSupportPlans(allTriangles, allGeometries, process)
+                }
+            } else {
+                List(totalLayers) { LayerSupportPlan.EMPTY }
+            }
+
             onProgress(0.48f, "Pass 2/2: Generating Top/Bottom surfaces, solid shells & infill...")
 
             // PASS 2: Generate toolpaths for every layer using multi-layer region classification
@@ -154,7 +166,7 @@ object SlicingEngine {
                                 layerIdx = layerIdx,
                                 totalLayers = totalLayers,
                                 allGeometries = allGeometries,
-                                overhangPillars = overhangPillars,
+                                supportPlan = layerSupportPlans.getOrElse(layerIdx) { LayerSupportPlan.EMPTY },
                                 filament = filament,
                                 process = process
                             )
@@ -268,7 +280,7 @@ object SlicingEngine {
         layerIdx: Int,
         totalLayers: Int,
         allGeometries: List<LayerContourGeometry>,
-        overhangPillars: List<SupportPillar>,
+        supportPlan: LayerSupportPlan,
         filament: FilamentProfile,
         process: ProcessProfile
     ): SliceLayer {
@@ -391,19 +403,43 @@ object SlicingEngine {
             }
         }
 
-        // 2. Support structures on this layer
-        if (process.enableSupport && overhangPillars.isNotEmpty()) {
-            for (pillar in overhangPillars) {
-                if (nominalZ < pillar.maxZ - layerHeight * 0.8f) {
-                    val radius = if (process.supportType.name.contains("TREE")) {
-                        val t = (nominalZ / pillar.maxZ).coerceIn(0f, 1f)
-                        2.1f * (1f - 0.35f * t)
-                    } else {
-                        1.8f
-                    }
-                    val supportLoop = createOctagonLoop(pillar.x, pillar.y, radius)
-                    appendPath(supportLoop, ToolpathType.SUPPORT, process.supportSpeedMmS, supportWidth, closed = true)
-                }
+        // 2. OrcaSlicer Support structures on this layer (Normal Grid/Snug Support OR Organic Tree Support)
+        if (process.enableSupport && !supportPlan.isEmpty) {
+            for (loop in supportPlan.closedLoops) {
+                appendPath(
+                    points = loop,
+                    type = ToolpathType.SUPPORT,
+                    speedMmS = if (isInitialLayer) process.initialLayerSpeedMmS else process.supportSpeedMmS,
+                    lineWidthMm = supportWidth,
+                    closed = true
+                )
+            }
+            for (poly in supportPlan.openBasePolylines) {
+                appendPath(
+                    points = poly,
+                    type = ToolpathType.SUPPORT,
+                    speedMmS = if (isInitialLayer) process.initialLayerSpeedMmS else process.supportSpeedMmS,
+                    lineWidthMm = supportWidth,
+                    closed = false
+                )
+            }
+            for (iface in supportPlan.interfacePolylines) {
+                appendPath(
+                    points = iface,
+                    type = ToolpathType.SUPPORT,
+                    speedMmS = if (isInitialLayer) process.initialLayerSpeedMmS else process.supportInterfaceSpeedMmS,
+                    lineWidthMm = supportWidth,
+                    closed = false
+                )
+            }
+            for (ifaceLoop in supportPlan.interfaceClosedLoops) {
+                appendPath(
+                    points = ifaceLoop,
+                    type = ToolpathType.SUPPORT,
+                    speedMmS = if (isInitialLayer) process.initialLayerSpeedMmS else process.supportInterfaceSpeedMmS,
+                    lineWidthMm = supportWidth,
+                    closed = true
+                )
             }
         }
 
@@ -910,47 +946,1111 @@ object SlicingEngine {
         return mergeIntervals(out)
     }
 
-    private data class SupportPillar(val x: Float, val y: Float, val maxZ: Float)
+    // =========================================================================
+    // 1:1 OrcaSlicer Normal Support & Organic Tree Support Engine
+    // =========================================================================
 
-    private fun computeSupportPillars(
+    private data class LayerSupportPlan(
+        val closedLoops: List<List<Vec2>> = emptyList(),
+        val openBasePolylines: List<List<Vec2>> = emptyList(),
+        val interfacePolylines: List<List<Vec2>> = emptyList(),
+        val interfaceClosedLoops: List<List<Vec2>> = emptyList()
+    ) {
+        val isEmpty: Boolean
+            get() = closedLoops.isEmpty() &&
+                openBasePolylines.isEmpty() &&
+                interfacePolylines.isEmpty() &&
+                interfaceClosedLoops.isEmpty()
+
+        companion object {
+            val EMPTY = LayerSupportPlan()
+        }
+    }
+
+    private fun isPointInPolygon(pt: Vec2, poly: List<Vec2>): Boolean {
+        val n = poly.size
+        if (n < 3) return false
+        var inside = false
+        var j = n - 1
+        for (i in 0 until n) {
+            val pi = poly[i]
+            val pj = poly[j]
+            if (((pi.y > pt.y) != (pj.y > pt.y)) &&
+                (pt.x < (pj.x - pi.x) * (pt.y - pi.y) / (pj.y - pi.y + 1e-9f) + pi.x)
+            ) {
+                inside = !inside
+            }
+            j = i
+        }
+        return inside
+    }
+
+    private fun isPointInContours(pt: Vec2, contours: List<List<Vec2>>): Boolean {
+        var count = 0
+        for (c in contours) {
+            if (isPointInPolygon(pt, c)) count++
+        }
+        return (count % 2) == 1
+    }
+
+    private fun distancePointToSegment(p: Vec2, a: Vec2, b: Vec2): Pair<Float, Vec2> {
+        val abx = b.x - a.x
+        val aby = b.y - a.y
+        val lenSq = abx * abx + aby * aby
+        if (lenSq < 1e-8f) {
+            return p.distanceTo(a) to a
+        }
+        val t = (((p.x - a.x) * abx + (p.y - a.y) * aby) / lenSq).coerceIn(0f, 1f)
+        val closest = Vec2(a.x + abx * t, a.y + aby * t)
+        return p.distanceTo(closest) to closest
+    }
+
+    /**
+     * Returns (signedDistance, closestBoundaryPoint) where:
+     * - signedDistance < 0 means `pt` is INSIDE the model contours
+     * - signedDistance >= 0 means `pt` is OUTSIDE the model contours
+     */
+    private fun signedDistanceToContours(pt: Vec2, contours: List<List<Vec2>>): Pair<Float, Vec2> {
+        if (contours.isEmpty()) return Float.POSITIVE_INFINITY to pt
+        var minDist = Float.POSITIVE_INFINITY
+        var nearestPt = pt
+        for (poly in contours) {
+            val n = poly.size
+            if (n < 2) continue
+            for (i in 0 until n) {
+                val (d, cp) = distancePointToSegment(pt, poly[i], poly[(i + 1) % n])
+                if (d < minDist) {
+                    minDist = d
+                    nearestPt = cp
+                }
+            }
+        }
+        val inside = isPointInContours(pt, contours)
+        return (if (inside) -minDist else minDist) to nearestPt
+    }
+
+    /**
+     * Extracts unsupported overhang points on each layer `L` (1 .. totalLayers - 1) by combining:
+     * 1. Layer-to-layer contour diff: points inside `allGeometries[L]` that lie outside `allGeometries[L - 1]`
+     *    by more than the printable overhang step `layerHeight / tan(thresholdAngle)`.
+     * 2. Downward-facing mesh triangles whose surface angle from horizontal is below `supportThresholdAngleDeg`.
+     */
+    private fun extractOverhangPointsByLayer(
         triangles: List<Triangle>,
-        thresholdAngleDeg: Int
-    ): List<SupportPillar> {
-        val cosThreshold = -cos((90 - thresholdAngleDeg.coerceIn(10, 80)) * (PI.toFloat() / 180f))
-        val gridSpacing = 4.5f
-        val pillarMap = HashMap<Long, Float>()
+        allGeometries: List<LayerContourGeometry>,
+        process: ProcessProfile,
+        sampleSpacingMm: Float
+    ): Array<ArrayList<Vec2>> {
+        val totalLayers = allGeometries.size
+        val overhangsByLayer = Array(totalLayers) { ArrayList<Vec2>() }
+        if (totalLayers <= 1) return overhangsByLayer
+
+        // In OrcaSlicer, supportThresholdAngleDeg (default 30°) is the overhang angle from horizontal
+        // (or from vertical for steeper thresholds). Any surface overhanging beyond this step needs support.
+        val threshDeg = process.supportThresholdAngleDeg.coerceIn(10, 80)
+        val threshRad = threshDeg * (PI.toFloat() / 180f)
+        val outerWidth = process.outerWallLineWidthMm.coerceIn(0.25f, 1.0f)
+
+        // 1. Layer-to-Layer unsupported overhang regions
+        for (layerIdx in 2 until totalLayers) {
+            val geom = allGeometries[layerIdx]
+            val prevGeom = allGeometries[layerIdx - 1]
+            if (geom.outerContours.isEmpty()) continue
+
+            val selfSupportMargin = geom.layerHeight * (1f / tan(threshRad).coerceAtLeast(0.35f)) + outerWidth * 0.55f
+            val bounds = computeContoursBounds(geom.outerContours)
+            var y = bounds.first.y + sampleSpacingMm * 0.5f
+            while (y <= bounds.second.y - sampleSpacingMm * 0.25f) {
+                val curIntervals = scanlineIntervals(geom.outerContours, y)
+                val prevIntervals = expandIntervals(scanlineIntervals(prevGeom.outerContours, y), selfSupportMargin)
+                val unsupported = subtractIntervals(curIntervals, prevIntervals)
+                for (iv in unsupported) {
+                    val minLen = if (process.removeSmallOverhangs) outerWidth * 1.1f else outerWidth * 0.4f
+                    if (iv.length >= minLen) {
+                        var x = iv.start + min(sampleSpacingMm * 0.5f, iv.length * 0.5f)
+                        while (x <= iv.end + 1e-3f) {
+                            val pt = Vec2(x.coerceIn(iv.start, iv.end), y)
+                            // Also verify point is outside prevGeom by at least outerWidth * 0.45f in 2D
+                            val (sDistPrev, _) = signedDistanceToContours(pt, prevGeom.outerContours)
+                            if (sDistPrev > outerWidth * 0.45f) {
+                                overhangsByLayer[layerIdx].add(pt)
+                            }
+                            x += sampleSpacingMm
+                        }
+                    }
+                }
+                y += sampleSpacingMm
+            }
+        }
+
+        // 2. Downward-facing mesh triangles (catches flat downward roofs, local minima, and steep cantilevers)
+        val normalZCutoff = -cos((90 - threshDeg).coerceIn(15, 75) * (PI.toFloat() / 180f))
+        val firstLh = allGeometries[0].layerHeight
+        val stdLh = if (totalLayers > 1) allGeometries[1].layerHeight else firstLh
 
         for (tri in triangles) {
             val minZ = min(tri.v0.z, min(tri.v1.z, tri.v2.z))
-            if (minZ < 1.2f) continue
-            if (tri.normal.z < cosThreshold) {
+            if (minZ < firstLh + stdLh * 1.5f) continue
+            if (tri.normal.z < normalZCutoff) {
                 val minX = min(tri.v0.x, min(tri.v1.x, tri.v2.x))
                 val maxX = max(tri.v0.x, max(tri.v1.x, tri.v2.x))
                 val minY = min(tri.v0.y, min(tri.v1.y, tri.v2.y))
                 val maxY = max(tri.v0.y, max(tri.v1.y, tri.v2.y))
                 val avgZ = (tri.v0.z + tri.v1.z + tri.v2.z) / 3f
+                val targetLayer = (1 + ((avgZ - firstLh) / stdLh).roundToInt()).coerceIn(2, totalLayers - 1)
 
-                val gx0 = floor(minX / gridSpacing).toInt()
-                val gx1 = floor(maxX / gridSpacing).toInt()
-                val gy0 = floor(minY / gridSpacing).toInt()
-                val gy1 = floor(maxY / gridSpacing).toInt()
+                val cx = (tri.v0.x + tri.v1.x + tri.v2.x) / 3f
+                val cy = (tri.v0.y + tri.v1.y + tri.v2.y) / 3f
+                val prevContours = allGeometries[targetLayer - 1].outerContours
+                val (dCenter, _) = signedDistanceToContours(Vec2(cx, cy), prevContours)
+                if (dCenter > outerWidth * 0.35f) {
+                    overhangsByLayer[targetLayer].add(Vec2(cx, cy))
+                }
 
-                for (gx in gx0..gx1) {
-                    for (gy in gy0..gy1) {
-                        val key = (gx.toLong() shl 32) or (gy.toLong() and 0xFFFFFFFFL)
-                        val prev = pillarMap[key] ?: 0f
-                        if (avgZ > prev) pillarMap[key] = avgZ
+                // Sample larger overhang triangles across their footprint
+                if (maxX - minX > sampleSpacingMm || maxY - minY > sampleSpacingMm) {
+                    var sx = minX + sampleSpacingMm * 0.5f
+                    while (sx <= maxX) {
+                        var sy = minY + sampleSpacingMm * 0.5f
+                        while (sy <= maxY) {
+                            if (pointInTriangle2D(Vec2(sx, sy), Vec2(tri.v0.x, tri.v0.y), Vec2(tri.v1.x, tri.v1.y), Vec2(tri.v2.x, tri.v2.y))) {
+                                val (sd, _) = signedDistanceToContours(Vec2(sx, sy), prevContours)
+                                if (sd > outerWidth * 0.35f) {
+                                    overhangsByLayer[targetLayer].add(Vec2(sx, sy))
+                                }
+                            }
+                            sy += sampleSpacingMm
+                        }
+                        sx += sampleSpacingMm
                     }
                 }
             }
         }
 
-        return pillarMap.map { (key, topZ) ->
-            val gx = (key shr 32).toInt()
-            val gy = key.toInt()
-            SupportPillar(gx * gridSpacing, gy * gridSpacing, topZ)
+        return overhangsByLayer
+    }
+
+    private fun pointInTriangle2D(p: Vec2, a: Vec2, b: Vec2, c: Vec2): Boolean {
+        val d1 = (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y)
+        val d2 = (p.x - c.x) * (b.y - c.y) - (b.x - c.x) * (p.y - c.y)
+        val d3 = (p.x - a.x) * (c.y - a.y) - (c.x - a.x) * (p.y - a.y)
+        val hasNeg = (d1 < 0f) || (d2 < 0f) || (d3 < 0f)
+        val hasPos = (d1 > 0f) || (d2 > 0f) || (d3 > 0f)
+        return !(hasNeg && hasPos)
+    }
+
+    /**
+     * OrcaSlicer Normal Support (`normal(auto)` / `normal(manual)`):
+     * - Projects overhang regions vertically downward from top to bottom
+     * - Subtracts model contours expanded by `supportObjectXyDistanceMm` so supports never intersect the part
+     * - Filters out supports landing on the model if `supportOnBuildPlateOnly` is enabled
+     * - Generates snug perimeter walls, continuous serpentine/accordion rectilinear/grid/honeycomb base lines,
+     *   Layer 0 expanded bed adhesion base pad, and dense top/bottom support interface layers.
+     */
+    private fun computeNormalSupportPlans(
+        triangles: List<Triangle>,
+        allGeometries: List<LayerContourGeometry>,
+        process: ProcessProfile
+    ): List<LayerSupportPlan> {
+        val totalLayers = allGeometries.size
+        if (totalLayers <= 1) return List(totalLayers) { LayerSupportPlan.EMPTY }
+
+        val cellSize = 1.25f
+        val overhangsByLayer = extractOverhangPointsByLayer(triangles, allGeometries, process, sampleSpacingMm = cellSize)
+        if (overhangsByLayer.all { it.isEmpty() }) {
+            return List(totalLayers) { LayerSupportPlan.EMPTY }
+        }
+
+        val allOuter = allGeometries.flatMap { it.outerContours }
+        if (allOuter.isEmpty()) return List(totalLayers) { LayerSupportPlan.EMPTY }
+        val modelBounds = computeContoursBounds(allOuter)
+        val pad = max(4.0f, process.supportFirstLayerExpansionMm + 2.5f)
+        val minX = modelBounds.first.x - pad
+        val minY = modelBounds.first.y - pad
+        val maxX = modelBounds.second.x + pad
+        val maxY = modelBounds.second.y + pad
+
+        val nx = ((maxX - minX) / cellSize).toInt().coerceIn(8, 260)
+        val ny = ((maxY - minY) / cellSize).toInt().coerceIn(8, 260)
+        val numCells = nx * ny
+
+        fun cellCenter(ix: Int, iy: Int): Vec2 =
+            Vec2(minX + (ix + 0.5f) * cellSize, minY + (iy + 0.5f) * cellSize)
+
+        val stdLh = if (totalLayers > 1) allGeometries[1].layerHeight else allGeometries[0].layerHeight
+        val topZGapLayers = max(1, (process.supportTopZDistanceMm / stdLh).roundToInt())
+        val bottomZGapLayers = max(1, (process.supportBottomZDistanceMm / stdLh).roundToInt())
+        val topInterfaceCount = process.supportTopInterfaceLayers.coerceIn(0, 8)
+        val bottomInterfaceCount = process.supportBottomInterfaceLayers.coerceIn(0, 8)
+        val xyClearance = process.supportObjectXyDistanceMm.coerceIn(0.15f, 2.0f)
+
+        // Precompute per-layer model blocked mask (inside model or within xyClearance) and strictly-inside-model mask
+        val insideModelByLayer = Array(totalLayers) { BooleanArray(numCells) }
+        val blockedByModelByLayer = Array(totalLayers) { BooleanArray(numCells) }
+
+        for (layerIdx in 0 until totalLayers) {
+            val contours = allGeometries[layerIdx].outerContours
+            if (contours.isEmpty()) continue
+            val gap = if (layerIdx == 0) max(xyClearance, process.supportObjectFirstLayerGapMm) else xyClearance
+            val insideArr = insideModelByLayer[layerIdx]
+            val blockedArr = blockedByModelByLayer[layerIdx]
+            for (iy in 0 until ny) {
+                for (ix in 0 until nx) {
+                    val pt = cellCenter(ix, iy)
+                    val (sDist, _) = signedDistanceToContours(pt, contours)
+                    val idx = iy * nx + ix
+                    if (sDist < 0f) {
+                        insideArr[idx] = true
+                        blockedArr[idx] = true
+                    } else if (sDist < gap) {
+                        blockedArr[idx] = true
+                    }
+                }
+            }
+        }
+
+        // Seed overhang cells per layer
+        val seededOverhang = Array(totalLayers) { BooleanArray(numCells) }
+        for (layerIdx in 2 until totalLayers) {
+            val pts = overhangsByLayer[layerIdx]
+            if (pts.isEmpty()) continue
+            val startSupportLayer = (layerIdx - topZGapLayers).coerceAtLeast(0)
+            val seedArr = seededOverhang[startSupportLayer]
+            for (pt in pts) {
+                val ix = ((pt.x - minX) / cellSize).toInt().coerceIn(0, nx - 1)
+                val iy = ((pt.y - minY) / cellSize).toInt().coerceIn(0, ny - 1)
+                seedArr[iy * nx + ix] = true
+            }
+        }
+
+        // Top-down propagation per column (ix, iy) from totalLayers - 1 down to 0
+        // 0 = none, 1 = base support, 2 = interface support
+        val supportStateByLayer = Array(totalLayers) { ByteArray(numCells) }
+
+        for (iy in 0 until ny) {
+            for (ix in 0 until nx) {
+                val cellIdx = iy * nx + ix
+                var activeRunLayers = 0
+                var runTopLayer = -1
+
+                fun finalizeRun(bottomLayerInclusive: Int, landedOnModel: Boolean) {
+                    if (runTopLayer < bottomLayerInclusive) return
+                    if (landedOnModel && process.supportOnBuildPlateOnly) {
+                        // Discard column segment that landed on the model when "On build plate only" is checked
+                        return
+                    }
+                    val actualBottom = if (landedOnModel) {
+                        min(runTopLayer, bottomLayerInclusive + bottomZGapLayers)
+                    } else {
+                        bottomLayerInclusive
+                    }
+                    if (runTopLayer < actualBottom) return
+                    for (l in actualBottom..runTopLayer) {
+                        val distFromTop = runTopLayer - l
+                        val distFromBottom = l - actualBottom
+                        val isTopIface = distFromTop < topInterfaceCount
+                        val isBotIface = landedOnModel && distFromBottom < bottomInterfaceCount
+                        supportStateByLayer[l][cellIdx] = if (isTopIface || isBotIface) 2 else 1
+                    }
+                }
+
+                for (l in (totalLayers - 1) downTo 0) {
+                    if (insideModelByLayer[l][cellIdx]) {
+                        if (activeRunLayers > 0) {
+                            finalizeRun(l + 1, landedOnModel = true)
+                            activeRunLayers = 0
+                            runTopLayer = -1
+                        }
+                        continue
+                    }
+
+                    if (seededOverhang[l][cellIdx] && !blockedByModelByLayer[l][cellIdx]) {
+                        if (activeRunLayers == 0) {
+                            runTopLayer = l
+                        }
+                        activeRunLayers++
+                    } else if (activeRunLayers > 0) {
+                        if (!blockedByModelByLayer[l][cellIdx]) {
+                            activeRunLayers++
+                        } else {
+                            // Hit XY clearance halo around model; check if model is directly below
+                            if (l > 0 && insideModelByLayer[l - 1][cellIdx]) {
+                                finalizeRun(l, landedOnModel = true)
+                                activeRunLayers = 0
+                                runTopLayer = -1
+                            }
+                        }
+                    }
+                }
+
+                if (activeRunLayers > 0 && runTopLayer >= 0) {
+                    finalizeRun(0, landedOnModel = false)
+                }
+            }
+        }
+
+        // Dilate Layer 0 by supportFirstLayerExpansionMm (and body layers by normalSupportExpansionMm) while respecting blockedByModel
+        val firstLayerExpandCells = (process.supportFirstLayerExpansionMm.coerceIn(0f, 6f) / cellSize).roundToInt()
+        val bodyExpandCells = (process.normalSupportExpansionMm.coerceIn(0f, 4f) / cellSize).roundToInt()
+
+        for (l in 0 until totalLayers) {
+            val expandRadius = if (l == 0) max(1, firstLayerExpandCells) else bodyExpandCells
+            if (expandRadius > 0) {
+                val src = supportStateByLayer[l].clone()
+                val dst = supportStateByLayer[l]
+                val blocked = blockedByModelByLayer[l]
+                for (iy in 0 until ny) {
+                    for (ix in 0 until nx) {
+                        val idx = iy * nx + ix
+                        if (src[idx] == 0.toByte() && !blocked[idx]) {
+                            var found: Byte = 0
+                            val y0 = max(0, iy - expandRadius)
+                            val y1 = min(ny - 1, iy + expandRadius)
+                            val x0 = max(0, ix - expandRadius)
+                            val x1 = min(nx - 1, ix + expandRadius)
+                            for (nyIdx in y0..y1) {
+                                for (nxIdx in x0..x1) {
+                                    val dx = nxIdx - ix
+                                    val dy = nyIdx - iy
+                                    if (dx * dx + dy * dy <= expandRadius * expandRadius) {
+                                        val s = src[nyIdx * nx + nxIdx]
+                                        if (s > found) found = s
+                                    }
+                                }
+                            }
+                            if (found > 0) dst[idx] = if (l == 0) 1 else found
+                        }
+                    }
+                }
+            }
+        }
+
+        // Convert each layer's support mask into OrcaSlicer Normal Support toolpaths
+        val baseSpacing = process.supportBasePatternSpacingMm.coerceIn(0.8f, 10.0f)
+        val ifaceSpacing = process.supportTopInterfaceSpacingMm.coerceIn(0.35f, 1.5f)
+        val baseAngleDeg = process.supportPatternAngleDeg.toFloat()
+
+        return (0 until totalLayers).map { layerIdx ->
+            val stateArr = supportStateByLayer[layerIdx]
+            if (stateArr.all { it == 0.toByte() }) {
+                LayerSupportPlan.EMPTY
+            } else {
+                buildNormalSupportLayerPlan(
+                    layerIdx = layerIdx,
+                    stateArr = stateArr,
+                    nx = nx,
+                    ny = ny,
+                    minX = minX,
+                    minY = minY,
+                    cellSize = cellSize,
+                    baseSpacing = if (layerIdx == 0) min(baseSpacing, 1.4f) else baseSpacing,
+                    ifaceSpacing = ifaceSpacing,
+                    baseAngleDeg = baseAngleDeg,
+                    process = process
+                )
+            }
         }
     }
+
+    private fun buildNormalSupportLayerPlan(
+        layerIdx: Int,
+        stateArr: ByteArray,
+        nx: Int,
+        ny: Int,
+        minX: Float,
+        minY: Float,
+        cellSize: Float,
+        baseSpacing: Float,
+        ifaceSpacing: Float,
+        baseAngleDeg: Float,
+        process: ProcessProfile
+    ): LayerSupportPlan {
+        // 1. Extract outer boundary loops around active support regions on this layer (Snug / Base Perimeter Wall)
+        val closedLoops = ArrayList<List<Vec2>>()
+        val wantPerimeterWall = layerIdx == 0 ||
+            process.supportStyle == SupportStyle.SNUG ||
+            process.supportWallLoops > 0
+
+        val boundaryPolys = extractGridBoundaryPolygons(stateArr, nx, ny, minX, minY, cellSize)
+        if (wantPerimeterWall && boundaryPolys.isNotEmpty()) {
+            val wallLoopsCount = if (layerIdx == 0) 1 else process.supportWallLoops.coerceIn(1, 3)
+            val supportWidth = process.supportLineWidthMm.coerceIn(0.25f, 0.8f)
+            for (poly in boundaryPolys) {
+                var ring = poly
+                for (w in 0 until wallLoopsCount) {
+                    if (ring.size < 3) break
+                    closedLoops.add(ring)
+                    ring = offsetPolygonInward(ring, supportWidth * 0.92f)
+                }
+            }
+        }
+
+        // 2. Generate continuous serpentine/accordion Base Support lines (and Grid/Honeycomb variants)
+        val hasBaseCells = stateArr.any { it == 1.toByte() || (layerIdx == 0 && it > 0) }
+        val hasIfaceCells = layerIdx > 0 && stateArr.any { it == 2.toByte() }
+
+        val openBasePolylines = ArrayList<List<Vec2>>()
+        if (hasBaseCells && boundaryPolys.isNotEmpty()) {
+            val primaryLines = generateSerpentineSupportLines(
+                polygons = boundaryPolys,
+                stateArr = stateArr,
+                targetState = if (layerIdx == 0) 0 else 1, // 0 means any non-zero cell on layer 0
+                nx = nx,
+                ny = ny,
+                minX = minX,
+                minY = minY,
+                cellSize = cellSize,
+                spacing = baseSpacing,
+                angleDeg = baseAngleDeg,
+                honeycombWave = process.supportBasePattern == SupportBasePattern.HONEYCOMB
+            )
+            openBasePolylines.addAll(primaryLines)
+
+            if (process.supportBasePattern == SupportBasePattern.RECTILINEAR_GRID) {
+                val crossLines = generateSerpentineSupportLines(
+                    polygons = boundaryPolys,
+                    stateArr = stateArr,
+                    targetState = if (layerIdx == 0) 0 else 1,
+                    nx = nx,
+                    ny = ny,
+                    minX = minX,
+                    minY = minY,
+                    cellSize = cellSize,
+                    spacing = baseSpacing * 1.4f,
+                    angleDeg = baseAngleDeg + 90f,
+                    honeycombWave = false
+                )
+                openBasePolylines.addAll(crossLines)
+            }
+        }
+
+        // 3. Generate dense Support Interface lines (or Concentric interface loops) for state == 2 cells
+        val interfacePolylines = ArrayList<List<Vec2>>()
+        val interfaceClosedLoops = ArrayList<List<Vec2>>()
+        if (hasIfaceCells && boundaryPolys.isNotEmpty()) {
+            if (process.supportInterfacePattern == SupportInterfacePattern.CONCENTRIC) {
+                val ifacePolys = extractGridBoundaryPolygons(
+                    stateArr = ByteArray(stateArr.size) { if (stateArr[it] == 2.toByte()) 1 else 0 },
+                    nx = nx,
+                    ny = ny,
+                    minX = minX,
+                    minY = minY,
+                    cellSize = cellSize
+                )
+                val rings = generateConcentricRings(ifacePolys, ifaceSpacing.coerceAtLeast(0.38f))
+                interfaceClosedLoops.addAll(rings)
+            } else {
+                val ifaceAngle = if (layerIdx % 2 == 0) baseAngleDeg + 90f else baseAngleDeg
+                val ifaceLines = generateSerpentineSupportLines(
+                    polygons = boundaryPolys,
+                    stateArr = stateArr,
+                    targetState = 2,
+                    nx = nx,
+                    ny = ny,
+                    minX = minX,
+                    minY = minY,
+                    cellSize = cellSize,
+                    spacing = ifaceSpacing.coerceAtLeast(0.40f),
+                    angleDeg = ifaceAngle,
+                    honeycombWave = false
+                )
+                interfacePolylines.addAll(ifaceLines)
+            }
+        }
+
+        return LayerSupportPlan(
+            closedLoops = closedLoops,
+            openBasePolylines = openBasePolylines,
+            interfacePolylines = interfacePolylines,
+            interfaceClosedLoops = interfaceClosedLoops
+        )
+    }
+
+    private fun extractGridBoundaryPolygons(
+        stateArr: ByteArray,
+        nx: Int,
+        ny: Int,
+        minX: Float,
+        minY: Float,
+        cellSize: Float
+    ): List<List<Vec2>> {
+        val edges = ArrayList<Segment2D>()
+        fun isActive(ix: Int, iy: Int): Boolean {
+            if (ix < 0 || ix >= nx || iy < 0 || iy >= ny) return false
+            return stateArr[iy * nx + ix] > 0
+        }
+
+        for (iy in 0 until ny) {
+            val y0 = minY + iy * cellSize
+            val y1 = y0 + cellSize
+            for (ix in 0 until nx) {
+                if (!isActive(ix, iy)) continue
+                val x0 = minX + ix * cellSize
+                val x1 = x0 + cellSize
+                if (!isActive(ix, iy - 1)) edges.add(Segment2D(Vec2(x0, y0), Vec2(x1, y0)))
+                if (!isActive(ix + 1, iy)) edges.add(Segment2D(Vec2(x1, y0), Vec2(x1, y1)))
+                if (!isActive(ix, iy + 1)) edges.add(Segment2D(Vec2(x1, y1), Vec2(x0, y1)))
+                if (!isActive(ix - 1, iy)) edges.add(Segment2D(Vec2(x0, y1), Vec2(x0, y0)))
+            }
+        }
+        val rawPolys = chainSegmentsIntoPolygons(edges)
+        // Smooth grid staircase corners slightly for clean snug support perimeters
+        return rawPolys.map { poly -> smoothGridPolygon(poly) }
+    }
+
+    private fun smoothGridPolygon(poly: List<Vec2>): List<Vec2> {
+        if (poly.size < 4) return poly
+        val out = ArrayList<Vec2>(poly.size)
+        val n = poly.size
+        for (i in 0 until n) {
+            val prev = poly[(i + n - 1) % n]
+            val curr = poly[i]
+            val next = poly[(i + 1) % n]
+            out.add(Vec2(curr.x * 0.6f + (prev.x + next.x) * 0.2f, curr.y * 0.6f + (prev.y + next.y) * 0.2f))
+        }
+        return cleanAndSimplifyPolygon(out).ifEmpty { poly }
+    }
+
+    /**
+     * Generates OrcaSlicer's continuous serpentine (accordion / zig-zag) support lines across the support polygons,
+     * linking consecutive scanline segments into continuous extruding polylines when adjacent.
+     */
+    private fun generateSerpentineSupportLines(
+        polygons: List<List<Vec2>>,
+        stateArr: ByteArray,
+        targetState: Int,
+        nx: Int,
+        ny: Int,
+        minX: Float,
+        minY: Float,
+        cellSize: Float,
+        spacing: Float,
+        angleDeg: Float,
+        honeycombWave: Boolean
+    ): List<List<Vec2>> {
+        val rad = angleDeg * (PI.toFloat() / 180f)
+        val cosA = cos(rad)
+        val sinA = sin(rad)
+
+        fun rotate(p: Vec2): Vec2 = Vec2(p.x * cosA + p.y * sinA, -p.x * sinA + p.y * cosA)
+        fun unrotate(rx: Float, ry: Float): Vec2 = Vec2(rx * cosA - ry * sinA, rx * sinA + ry * cosA)
+
+        val rotatedPolys = polygons.map { poly -> poly.map(::rotate) }
+        val bounds = computeContoursBounds(rotatedPolys)
+        val startY = bounds.first.y + spacing * 0.35f
+        val endY = bounds.second.y - spacing * 0.35f
+        if (endY < startY) return emptyList()
+
+        data class ScanSegment(val rowIdx: Int, val y: Float, val xStart: Float, val xEnd: Float, var used: Boolean = false)
+
+        val rows = ArrayList<List<ScanSegment>>()
+        var y = startY
+        var rIdx = 0
+        while (y <= endY + 1e-3f) {
+            val intervals = scanlineIntervals(rotatedPolys, y)
+            val rowSegs = ArrayList<ScanSegment>()
+            for (iv in intervals) {
+                if (iv.length < 0.6f) continue
+                // Filter interval by targetState in grid
+                val midWorld = unrotate((iv.start + iv.end) * 0.5f, y)
+                val ix = ((midWorld.x - minX) / cellSize).toInt().coerceIn(0, nx - 1)
+                val iy = ((midWorld.y - minY) / cellSize).toInt().coerceIn(0, ny - 1)
+                val cellVal = stateArr[iy * nx + ix].toInt()
+                val matches = if (targetState == 0) cellVal > 0 else cellVal == targetState
+                if (matches) {
+                    rowSegs.add(ScanSegment(rIdx, y, iv.start, iv.end))
+                }
+            }
+            if (rowSegs.isNotEmpty()) {
+                rows.add(rowSegs)
+                rIdx++
+            }
+            y += spacing
+        }
+
+        // Chain vertically adjacent scan segments into continuous serpentine accordion polylines
+        val polylines = ArrayList<List<Vec2>>()
+        for (i in rows.indices) {
+            for (seg in rows[i]) {
+                if (seg.used) continue
+                seg.used = true
+                val pts = ArrayList<Vec2>()
+                var dirRight = (i % 2 == 0)
+
+                fun appendSegmentPoints(s: ScanSegment, leftToRight: Boolean) {
+                    val x0 = if (leftToRight) s.xStart else s.xEnd
+                    val x1 = if (leftToRight) s.xEnd else s.xStart
+                    if (!honeycombWave || abs(x1 - x0) < 2.5f) {
+                        pts.add(unrotate(x0, s.y))
+                        pts.add(unrotate(x1, s.y))
+                    } else {
+                        val steps = max(3, (abs(x1 - x0) / 1.8f).toInt().coerceAtMost(24))
+                        for (k in 0..steps) {
+                            val t = k.toFloat() / steps
+                            val rx = x0 + (x1 - x0) * t
+                            val wave = sin(rx * 1.4f + s.rowIdx * 1.5f) * (spacing * 0.25f)
+                            pts.add(unrotate(rx, s.y + wave))
+                        }
+                    }
+                }
+
+                appendSegmentPoints(seg, dirRight)
+                var curSeg = seg
+                var curRowIdx = i
+
+                while (curRowIdx + 1 < rows.size) {
+                    val nextRow = rows[curRowIdx + 1]
+                    val turnX = if (dirRight) curSeg.xEnd else curSeg.xStart
+                    val candidate = nextRow.firstOrNull { nxt ->
+                        !nxt.used &&
+                            abs(nxt.y - curSeg.y) <= spacing * 1.6f &&
+                            max(curSeg.xStart, nxt.xStart) <= min(curSeg.xEnd, nxt.xEnd) + spacing * 0.8f &&
+                            abs((if (dirRight) nxt.xEnd else nxt.xStart) - turnX) <= spacing * 2.5f
+                    } ?: break
+
+                    candidate.used = true
+                    dirRight = !dirRight
+                    appendSegmentPoints(candidate, dirRight)
+                    curSeg = candidate
+                    curRowIdx++
+                }
+
+                if (pts.size >= 2) {
+                    polylines.add(pts)
+                }
+            }
+        }
+        return polylines
+    }
+
+    /**
+     * OrcaSlicer Tree (Organic) Support (`tree(auto)` / `tree(manual)`):
+     * - Extracts overhang contact tips on every layer
+     * - Simulates Top-Down Organic Tree Growth from `totalLayers - 1` down to `0`:
+     *   1. Spawns branch tips with `treeSupportTipDiameterMm` right below overhangs (`supportTopZDistanceMm` air gap)
+     *   2. Steers active branches outward away from `allGeometries[L].outerContours` (`supportObjectXyDistanceMm` clearance)
+     *      so branches curve organically around the model instead of colliding with it
+     *   3. Pulls nearby branches toward their local cluster center within the printable overhang angle (`treeSupportBranchAngleDeg`)
+     *   4. Merges touching branches into thicker parent trunks (`sqrt(rA^2 + 0.65 * rB^2)` + `treeSupportBranchDiameterAngleDeg` taper)
+     *   5. Computes exact circle-arc boolean union contours on each layer so merging branches form smooth figure-8 / organic tubes
+     *   6. Generates `treeSupportWallLoops` concentric walls, dense tip interface pads, and Layer 0 tree root brim flanges.
+     */
+    private data class ActiveTreeBranch(
+        var x: Float,
+        var y: Float,
+        var radius: Float,
+        var ageLayers: Int,
+        var landedOnModel: Boolean = false,
+        val historyByLayer: HashMap<Int, TreeCrossSection> = HashMap()
+    )
+
+    private data class TreeCrossSection(
+        val x: Float,
+        val y: Float,
+        val radius: Float,
+        val isInterface: Boolean
+    )
+
+    private fun computeTreeSupportPlans(
+        triangles: List<Triangle>,
+        allGeometries: List<LayerContourGeometry>,
+        process: ProcessProfile
+    ): List<LayerSupportPlan> {
+        val totalLayers = allGeometries.size
+        if (totalLayers <= 1) return List(totalLayers) { LayerSupportPlan.EMPTY }
+
+        val tipSpacing = max(2.4f, process.treeSupportBranchDiameterMm + process.treeSupportBranchDistanceMm)
+        val rawOverhangsByLayer = extractOverhangPointsByLayer(
+            triangles = triangles,
+            allGeometries = allGeometries,
+            process = process,
+            sampleSpacingMm = tipSpacing * 0.85f
+        )
+        if (rawOverhangsByLayer.all { it.isEmpty() }) {
+            return List(totalLayers) { LayerSupportPlan.EMPTY }
+        }
+
+        val stdLh = if (totalLayers > 1) allGeometries[1].layerHeight else allGeometries[0].layerHeight
+        val topZGapLayers = max(1, (process.supportTopZDistanceMm / stdLh).roundToInt())
+        val topInterfaceCount = process.supportTopInterfaceLayers.coerceIn(1, 6)
+        val xyClearance = process.supportObjectXyDistanceMm.coerceIn(0.20f, 2.0f)
+
+        val tipRadius = (process.treeSupportTipDiameterMm * 0.5f).coerceIn(0.45f, 1.6f)
+        val baseBranchRadius = (process.treeSupportBranchDiameterMm * 0.5f).coerceIn(0.8f, 4.0f)
+        val maxTrunkRadius = max(baseBranchRadius * 2.2f, 4.2f)
+
+        val maxAngleRad = (process.treeSupportBranchAngleDeg.coerceIn(15, 65)) * (PI.toFloat() / 180f)
+        val maxStepPerLayer = stdLh * tan(maxAngleRad)
+        val taperPerLayer = stdLh * tan(process.treeSupportBranchDiameterAngleDeg.coerceIn(1, 15) * (PI.toFloat() / 180f))
+
+        // Cluster overhang points on each layer so tips are cleanly spaced by tipSpacing
+        val spawnedTipsByLayer = Array(totalLayers) { ArrayList<Vec2>() }
+        for (layerIdx in 2 until totalLayers) {
+            val rawPts = rawOverhangsByLayer[layerIdx]
+            if (rawPts.isEmpty()) continue
+            val targetTipLayer = (layerIdx - topZGapLayers).coerceAtLeast(0)
+            val chosen = spawnedTipsByLayer[targetTipLayer]
+            for (pt in rawPts) {
+                if (chosen.none { it.distanceTo(pt) < tipSpacing * 0.85f }) {
+                    chosen.add(pt)
+                }
+            }
+        }
+
+        val activeBranches = ArrayList<ActiveTreeBranch>()
+        val completedBranches = ArrayList<ActiveTreeBranch>()
+        val basePlateContours = allGeometries[0].outerContours
+
+        // Top-Down Organic Tree Growth from totalLayers - 1 down to 0
+        for (layerIdx in (totalLayers - 1) downTo 0) {
+            val contours = allGeometries[layerIdx].outerContours
+
+            // 1. Advance existing branches downward to this layer
+            val iterator = activeBranches.iterator()
+            while (iterator.hasNext()) {
+                val b = iterator.next()
+                b.ageLayers++
+                val targetRadius = min(
+                    maxTrunkRadius,
+                    max(b.radius + taperPerLayer, min(baseBranchRadius, tipRadius + b.ageLayers * 0.08f))
+                )
+                b.radius = targetRadius
+
+                // Look-ahead obstacle avoidance: if this branch is above the Layer 0 model footprint,
+                // steer it smoothly outward toward the nearest edge of the model base so the trunk roots on the build plate!
+                if (layerIdx > 0 && basePlateContours.isNotEmpty()) {
+                    val (sDistBase, nearestBaseEdge) = signedDistanceToContours(Vec2(b.x, b.y), basePlateContours)
+                    val desiredClearance = maxTrunkRadius + xyClearance + 0.5f
+                    val neededOutward = desiredClearance - sDistBase
+                    if (neededOutward > 0.05f && neededOutward <= layerIdx * maxStepPerLayer * 1.4f) {
+                        val outDir = if (sDistBase < 0f) {
+                            (nearestBaseEdge - Vec2(b.x, b.y)).normalized()
+                        } else {
+                            (Vec2(b.x, b.y) - nearestBaseEdge).normalized()
+                        }
+                        if (outDir.length() > 0.1f) {
+                            val stepOut = min(maxStepPerLayer * 0.85f, neededOutward / max(1f, layerIdx * 0.45f))
+                            val cand = Vec2(b.x + outDir.x * stepOut, b.y + outDir.y * stepOut)
+                            val (sDistCur, _) = signedDistanceToContours(cand, contours)
+                            if (sDistCur >= b.radius + xyClearance) {
+                                b.x = cand.x
+                                b.y = cand.y
+                            }
+                        }
+                    }
+                }
+
+                // Check model collision / XY clearance at this layer
+                if (contours.isNotEmpty()) {
+                    val (sDist, nearestBoundaryPt) = signedDistanceToContours(Vec2(b.x, b.y), contours)
+                    val requiredClearance = b.radius + xyClearance
+                    if (sDist < requiredClearance) {
+                        // Compute outward escape vector away from model contour
+                        var escapeDir = if (sDist >= 0f) {
+                            (Vec2(b.x, b.y) - nearestBoundaryPt).normalized()
+                        } else {
+                            // Branch center is inside contour: push toward nearest boundary point!
+                            (nearestBoundaryPt - Vec2(b.x, b.y)).normalized()
+                        }
+                        if (escapeDir.length() < 0.1f) {
+                            escapeDir = Vec2(1f, 0f)
+                        }
+                        val neededPush = requiredClearance - sDist
+                        val maxEscapeStep = maxStepPerLayer * 1.45f
+                        if (sDist < -b.radius * 0.8f && neededPush > maxEscapeStep * 2.2f) {
+                            // Branch landed flat on top of a wide horizontal model surface
+                            b.landedOnModel = true
+                            completedBranches.add(b)
+                            iterator.remove()
+                            continue
+                        } else {
+                            val pushDist = min(neededPush, maxEscapeStep)
+                            b.x += escapeDir.x * pushDist
+                            b.y += escapeDir.y * pushDist
+                        }
+                    }
+                }
+            }
+
+            // 2. Spawn new overhang contact tips at this layer (if not already covered by an existing branch)
+            for (tipPt in spawnedTipsByLayer[layerIdx]) {
+                val covered = activeBranches.any { Vec2(it.x, it.y).distanceTo(tipPt) < it.radius + tipSpacing * 0.45f }
+                if (!covered) {
+                    var tx = tipPt.x
+                    var ty = tipPt.y
+                    if (contours.isNotEmpty()) {
+                        val (sDist, nearestPt) = signedDistanceToContours(tipPt, contours)
+                        val req = tipRadius + xyClearance * 0.8f
+                        if (sDist < req) {
+                            val dir = if (sDist >= 0f) (tipPt - nearestPt).normalized() else (nearestPt - tipPt).normalized()
+                            tx = nearestPt.x + dir.x * req
+                            ty = nearestPt.y + dir.y * req
+                        }
+                    }
+                    activeBranches.add(
+                        ActiveTreeBranch(
+                            x = tx,
+                            y = ty,
+                            radius = tipRadius,
+                            ageLayers = 0
+                        )
+                    )
+                }
+            }
+
+            // 3. Organic Sibling Branch Attraction (pull nearby branches toward their local cluster center within maxStepPerLayer)
+            if (activeBranches.size >= 2 && layerIdx > 0) {
+                val n = activeBranches.size
+                val deltaX = FloatArray(n)
+                val deltaY = FloatArray(n)
+                val attractRadius = 22.0f
+
+                for (i in 0 until n) {
+                    val bi = activeBranches[i]
+                    var sumX = 0f
+                    var sumY = 0f
+                    var weightSum = 0f
+                    for (j in 0 until n) {
+                        if (i == j) continue
+                        val bj = activeBranches[j]
+                        val d = hypot2D(bj.x - bi.x, bj.y - bi.y)
+                        if (d in 0.05f..attractRadius) {
+                            val w = (1f - d / attractRadius) * bj.radius
+                            sumX += bj.x * w
+                            sumY += bj.y * w
+                            weightSum += w
+                        }
+                    }
+                    if (weightSum > 0f) {
+                        val targetX = sumX / weightSum
+                        val targetY = sumY / weightSum
+                        val dir = Vec2(targetX - bi.x, targetY - bi.y)
+                        val dist = dir.length()
+                        if (dist > 0.02f) {
+                            val step = min(dist * 0.35f, maxStepPerLayer * 0.75f)
+                            val candidate = Vec2(bi.x + (dir.x / dist) * step, bi.y + (dir.y / dist) * step)
+                            // Only move toward sibling if it doesn't violate model XY clearance
+                            val (sDist, _) = signedDistanceToContours(candidate, contours)
+                            if (sDist >= bi.radius + xyClearance) {
+                                deltaX[i] = (dir.x / dist) * step
+                                deltaY[i] = (dir.y / dist) * step
+                            }
+                        }
+                    }
+                }
+                for (i in 0 until n) {
+                    activeBranches[i].x += deltaX[i]
+                    activeBranches[i].y += deltaY[i]
+                }
+
+                // 4. Merge branches that have converged into a single parent trunk
+                var mergedAny = true
+                while (mergedAny && activeBranches.size >= 2) {
+                    mergedAny = false
+                    outer@ for (i in 0 until activeBranches.size) {
+                        for (j in i + 1 until activeBranches.size) {
+                            val a = activeBranches[i]
+                            val b = activeBranches[j]
+                            val d = hypot2D(a.x - b.x, a.y - b.y)
+                            val mergeThreshold = (a.radius + b.radius) * 0.72f + process.treeSupportBranchDistanceMm * 0.2f
+                            if (d <= mergeThreshold) {
+                                val wA = a.radius * a.radius
+                                val wB = b.radius * b.radius
+                                val wTotal = (wA + wB).coerceAtLeast(1e-4f)
+                                a.x = (a.x * wA + b.x * wB) / wTotal
+                                a.y = (a.y * wA + b.y * wB) / wTotal
+                                a.radius = min(maxTrunkRadius, sqrt(wA + wB * 0.65f))
+                                a.ageLayers = max(a.ageLayers, b.ageLayers)
+                                // Merge layer histories so both sub-branches above this layer are preserved!
+                                for ((histLayer, sec) in b.historyByLayer) {
+                                    if (!a.historyByLayer.containsKey(histLayer)) {
+                                        a.historyByLayer[histLayer] = sec
+                                    }
+                                }
+                                // Keep a secondary cross-section list by moving `b` into completedBranches
+                                completedBranches.add(b)
+                                activeBranches.removeAt(j)
+                                mergedAny = true
+                                break@outer
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 5. Record cross-section of all active branches on this layer
+            for (b in activeBranches) {
+                b.historyByLayer[layerIdx] = TreeCrossSection(
+                    x = b.x,
+                    y = b.y,
+                    radius = b.radius,
+                    isInterface = b.ageLayers < topInterfaceCount
+                )
+            }
+        }
+
+        completedBranches.addAll(activeBranches)
+
+        // Filter out branches that landed on the model if `supportOnBuildPlateOnly` is enabled
+        val validBranches = if (process.supportOnBuildPlateOnly) {
+            completedBranches.filter { !it.landedOnModel }
+        } else {
+            completedBranches
+        }
+
+        // Gather cross-sections per layer and build organic union contours + tip interfaces + root brims
+        val sectionsByLayer = Array(totalLayers) { ArrayList<TreeCrossSection>() }
+        for (branch in validBranches) {
+            for ((layerIdx, sec) in branch.historyByLayer) {
+                if (layerIdx in 0 until totalLayers) {
+                    // Avoid duplicate identical circles from merged histories
+                    if (sectionsByLayer[layerIdx].none { hypot2D(it.x - sec.x, it.y - sec.y) < 0.08f && abs(it.radius - sec.radius) < 0.08f }) {
+                        sectionsByLayer[layerIdx].add(sec)
+                    }
+                }
+            }
+        }
+
+        val supportWidth = process.supportLineWidthMm.coerceIn(0.25f, 0.8f)
+        val treeWallCount = process.treeSupportWallLoops.coerceIn(1, 4)
+        val rootBrimExpand = max(process.supportFirstLayerExpansionMm, process.treeSupportBrimWidthMm).coerceIn(0f, 8f)
+        val ifaceSpacing = process.supportTopInterfaceSpacingMm.coerceIn(0.35f, 1.0f)
+
+        return (0 until totalLayers).map { layerIdx ->
+            val sections = sectionsByLayer[layerIdx]
+            if (sections.isEmpty()) {
+                LayerSupportPlan.EMPTY
+            } else {
+                val closedLoops = ArrayList<List<Vec2>>()
+                val interfaceClosedLoops = ArrayList<List<Vec2>>()
+
+                val bodySections = sections.filter { !it.isInterface }
+                val ifaceSections = sections.filter { it.isInterface }
+
+                // 1. Organic boolean union of overlapping tree branch circles on this layer
+                if (bodySections.isNotEmpty()) {
+                    val unionPolys = computeCircleUnionPolygons(bodySections)
+                    for (poly in unionPolys) {
+                        // On Layer 0, add outward Tree Root Brim flange loops around each trunk root!
+                        if (layerIdx == 0 && rootBrimExpand >= supportWidth) {
+                            val brimRings = (rootBrimExpand / (supportWidth * 0.92f)).toInt().coerceIn(1, 8)
+                            var outerBrim = poly
+                            for (b in 1..brimRings) {
+                                outerBrim = offsetPolygonOutward(outerBrim, supportWidth * 0.92f)
+                                if (outerBrim.size >= 3) {
+                                    closedLoops.add(outerBrim)
+                                }
+                            }
+                        }
+
+                        // Hollow organic tree branch perimeter wall loops (1..treeWallCount)
+                        var currentWall = poly
+                        val wallsToDraw = if (layerIdx == 0) max(treeWallCount, 3) else treeWallCount
+                        for (w in 0 until wallsToDraw) {
+                            if (currentWall.size < 3) break
+                            closedLoops.add(currentWall)
+                            currentWall = offsetPolygonInward(currentWall, supportWidth * 0.92f)
+                        }
+                    }
+                }
+
+                // 2. Dense Support Interface pads at Tree Branch Contact Tips right under overhangs
+                if (ifaceSections.isNotEmpty()) {
+                    val ifacePolys = computeCircleUnionPolygons(ifaceSections)
+                    for (poly in ifacePolys) {
+                        var ring = poly
+                        var safety = 0
+                        while (ring.size >= 3 && safety < 12) {
+                            interfaceClosedLoops.add(ring)
+                            ring = offsetPolygonInward(ring, ifaceSpacing)
+                            safety++
+                        }
+                    }
+                }
+
+                LayerSupportPlan(
+                    closedLoops = closedLoops,
+                    interfaceClosedLoops = interfaceClosedLoops
+                )
+            }
+        }
+    }
+
+    /**
+     * Computes the exact 2D boolean union contours of a set of (possibly overlapping) circles `(x, y, radius)`
+     * so merging tree branches form smooth figure-8 / peanut organic cross-sections without internal crossing walls.
+     */
+    private fun computeCircleUnionPolygons(circles: List<TreeCrossSection>): List<List<Vec2>> {
+        if (circles.isEmpty()) return emptyList()
+        if (circles.size == 1) {
+            val c = circles[0]
+            return listOf(createSmoothCircleLoop(c.x, c.y, c.radius, segments = 24))
+        }
+
+        // Remove any circle completely contained inside another circle
+        val filtered = circles.filter { ci ->
+            circles.none { cj ->
+                ci !== cj && hypot2D(ci.x - cj.x, ci.y - cj.y) + ci.radius <= cj.radius + 0.02f
+            }
+        }
+
+        val arcSegments = ArrayList<Segment2D>()
+        val nSegs = 24
+        for (i in filtered.indices) {
+            val ci = filtered[i]
+            val pts = createSmoothCircleLoop(ci.x, ci.y, ci.radius, segments = nSegs)
+            for (k in 0 until nSegs) {
+                val a = pts[k]
+                val b = pts[(k + 1) % nSegs]
+                val mid = (a + b) * 0.5f
+                val insideOther = filtered.indices.any { j ->
+                    if (i == j) false
+                    else {
+                        val cj = filtered[j]
+                        hypot2D(mid.x - cj.x, mid.y - cj.y) < cj.radius - 0.015f
+                    }
+                }
+                if (!insideOther) {
+                    arcSegments.add(Segment2D(a, b))
+                }
+            }
+        }
+
+        return chainSegmentsIntoPolygons(arcSegments)
+    }
+
+    private fun createSmoothCircleLoop(cx: Float, cy: Float, r: Float, segments: Int = 24): List<Vec2> {
+        val pts = ArrayList<Vec2>(segments)
+        val step = (2.0 * PI / segments).toFloat()
+        for (i in 0 until segments) {
+            val a = i * step
+            pts.add(Vec2(cx + cos(a) * r, cy + sin(a) * r))
+        }
+        return pts
+    }
+
+    private fun offsetPolygonOutward(rawPoly: List<Vec2>, expandDist: Float): List<Vec2> {
+        val poly = cleanAndSimplifyPolygon(ensureCounterClockwise(rawPoly))
+        if (poly.size < 3) return emptyList()
+        val n = poly.size
+        val shifted = ArrayList<Vec2>(n)
+        for (i in 0 until n) {
+            val prev = poly[(i + n - 1) % n]
+            val curr = poly[i]
+            val next = poly[(i + 1) % n]
+            val e1 = (curr - prev).normalized()
+            val e2 = (next - curr).normalized()
+            val n1 = e1.perp()
+            val n2 = e2.perp()
+            val bisector = (n1 + n2).normalized()
+            val cosHalf = bisector.x * n1.x + bisector.y * n1.y
+            val miterScale = if (cosHalf > 0.35f) (1f / cosHalf).coerceAtMost(1.65f) else 1f
+            shifted.add(curr - bisector * (expandDist * miterScale))
+        }
+        return shifted
+    }
+
+    private fun hypot2D(dx: Float, dy: Float): Float = sqrt(dx * dx + dy * dy)
 
     private fun intersectTrianglesAtZ(triangles: List<Triangle>, rawZ: Float): List<Segment2D> {
         // Perturb Z by a tiny irrational-like epsilon so the slicing plane never lands dead-on a vertex or horizontal face
