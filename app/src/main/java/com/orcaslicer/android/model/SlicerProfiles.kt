@@ -95,8 +95,101 @@ enum class FuzzySkinType(val label: String) {
 }
 
 enum class PrintSequence(val label: String) {
-    BY_LAYER("By Layer"),
-    BY_OBJECT("By Object")
+    BY_LAYER("By layer"),
+    BY_OBJECT("By object")
+}
+
+enum class WallsPrintingOrder(val label: String) {
+    INNER_OUTER("Inner/Outer"),
+    OUTER_INNER("Outer/Inner"),
+    INNER_OUTER_INNER("Inner/Outer/Inner")
+}
+
+enum class WallLoopDirection(val label: String) {
+    AUTO("Auto"),
+    COUNTER_CLOCKWISE("Counter clockwise"),
+    CLOCKWISE("Clockwise")
+}
+
+enum class TopOneWallMode(val label: String) {
+    NOT_APPLIED("Not applied"),
+    TOPMOST_SURFACE("Topmost surface"),
+    ALL_TOP_SURFACES("All top surfaces")
+}
+
+enum class ExtraBridgeLayersMode(val label: String) {
+    DISABLED("Disabled"),
+    APPLY_TO_ALL("Apply to all"),
+    EXTERNAL_BRIDGE_ONLY("External bridge only")
+}
+
+enum class FilterSmallBridgesMode(val label: String) {
+    FILTER("Filter"),
+    NO_FILTER("No filter"),
+    LIMITED("Limited")
+}
+
+enum class BridgeCounterboreMode(val label: String) {
+    NONE("None"),
+    PARTIALLY_BRIDGED("Partially bridged"),
+    SACRIFICIAL_LAYER("Sacrificial layer")
+}
+
+enum class GapFillPlacement(val label: String) {
+    NOWHERE("Nowhere"),
+    EVERYWHERE("Everywhere"),
+    TOP_AND_BOTTOM("Top and bottom surfaces")
+}
+
+enum class VerticalShellThicknessMode(val label: String) {
+    ALL("All"),
+    CRITICAL_ONLY("Critical only"),
+    MODERATE("Moderate"),
+    NONE("None")
+}
+
+enum class SupportBasePattern(val label: String) {
+    RECTILINEAR("Rectilinear"),
+    RECTILINEAR_GRID("Rectilinear grid"),
+    HONEYCOMB("Honeycomb"),
+    LIGHTNING("Lightning"),
+    HOLLOW("Hollow")
+}
+
+enum class SupportInterfacePattern(val label: String) {
+    DEFAULT("Default"),
+    RECTILINEAR("Rectilinear"),
+    CONCENTRIC("Concentric"),
+    RECTILINEAR_INTERLACED("Rectilinear interlaced"),
+    GRID("Grid")
+}
+
+enum class WipeTowerWallType(val label: String) {
+    RIB("Rib"),
+    CONE("Cone"),
+    PLAIN("Plain")
+}
+
+enum class SkirtType(val label: String) {
+    COMBINED("Combined"),
+    PER_OBJECT("Per object")
+}
+
+enum class DraftShieldMode(val label: String) {
+    DISABLED("Disabled"),
+    ENABLED("Enabled"),
+    LIMITED("Limited")
+}
+
+enum class SlicingModeType(val label: String) {
+    REGULAR("Regular"),
+    EVEN_ODD("Even-odd"),
+    CLOSE_HOLES("Close holes")
+}
+
+enum class IntraLayerOrder(val label: String) {
+    DEFAULT("Default"),
+    AS_ARRANGED("As arranged")
 }
 
 data class PrinterProfile(
@@ -191,7 +284,7 @@ data class ProcessProfile(
     val name: String,
     // 1. Quality
     val layerHeightMm: Float = 0.20f,
-    val initialLayerHeightMm: Float = 0.24f,
+    val initialLayerHeightMm: Float = 0.20f,
     val lineWidthMm: Float = 0.42f,
     val initialLayerLineWidthMm: Float = 0.50f,
     val outerWallLineWidthMm: Float = 0.42f,
@@ -214,95 +307,227 @@ data class ProcessProfile(
     val arcFittingG2G3: Boolean = false,
     val xyHoleCompensationMm: Float = 0.0f,
     val xyContourCompensationMm: Float = 0.0f,
-    val elephantFootCompensationMm: Float = 0.15f,
+    val elephantFootCompensationMm: Float = 0.10f,
     val elephantFootLayersDensityPercent: Int = 100,
     val elephantFootCompensationLayers: Int = 1,
-    val preciseWall: Boolean = true,
+    val preciseWall: Boolean = false,
     val preciseZHeight: Boolean = false,
+    val convertHolesToPolyholes: Boolean = false,
     val ironingType: IroningType = IroningType.NONE,
     val ironingSpeedMmS: Float = 30f,
     val ironingFlowPercent: Int = 10,
+    val zCompoundingEnabled: Boolean = false,
     val wallGenerator: WallGeneratorType = WallGeneratorType.ARACHNE,
-    val onlyOneWallOnTop: Boolean = true,
+    val wallTransitionThresholdAngleDeg: Int = 10,
+    val wallTransitionFilterMarginPercent: Int = 25,
+    val wallTransitionLengthPercent: Int = 100,
+    val wallDistributionCount: Int = 1,
+    val firstLayerMinWallWidthPercent: Int = 85,
+    val minWallWidthPercent: Int = 85,
+    val minFeatureSizePercent: Int = 25,
+    val minWallLengthMm: Float = 0.50f,
+    val minWallVolumeMm3: Float = 0.10f,
+    val maxWallDeviationMm: Float = 0.025f,
+    val wallsPrintingOrder: WallsPrintingOrder = WallsPrintingOrder.INNER_OUTER,
+    val printInfillFirst: Boolean = false,
+    val wallLoopDirection: WallLoopDirection = WallLoopDirection.COUNTER_CLOCKWISE,
+    val topSurfaceFlowRatio: Float = 1.0f,
+    val bottomSurfaceFlowRatio: Float = 1.0f,
+    val setOtherFlowRatios: Boolean = false,
     val onlyOneWallFirstLayer: Boolean = false,
+    val onlyOneWallOnTop: Boolean = true,
+    val topOneWallMode: TopOneWallMode = TopOneWallMode.ALL_TOP_SURFACES,
     val avoidCrossingWalls: Boolean = false,
+    val avoidCrossingWallsMaxDetourMm: Float = 0.0f,
+    val smallAreaFlowCompensation: Boolean = false,
+    val bridgeFlowRatio: Float = 0.95f,
+    val internalBridgeFlowRatio: Float = 1.0f,
+    val externalBridgeDensityPercent: Int = 100,
+    val internalBridgeDensityPercent: Int = 100,
+    val thickExternalBridges: Boolean = false,
+    val thickInternalBridges: Boolean = false,
+    val extraBridgeLayersMode: ExtraBridgeLayersMode = ExtraBridgeLayersMode.DISABLED,
+    val filterOutSmallInternalBridges: FilterSmallBridgesMode = FilterSmallBridgesMode.FILTER,
+    val bridgeCounterboreHoles: BridgeCounterboreMode = BridgeCounterboreMode.NONE,
+    val detectOverhangWalls: Boolean = true,
+    val makeOverhangsPrintable: Boolean = false,
+    val extraPerimetersOnOverhangs: Boolean = false,
+    val reverseOnEven: Boolean = false,
 
     // 2. Strength
-    val wallLoops: Int = 3,
+    val wallLoops: Int = 2,
     val alternateExtraWall: Boolean = false,
-    val detectThinWalls: Boolean = true,
+    val detectThinWalls: Boolean = false,
     val topShellLayers: Int = 4,
     val topShellThicknessMm: Float = 0.8f,
-    val bottomShellLayers: Int = 3,
-    val bottomShellThicknessMm: Float = 0.6f,
+    val topSurfaceDensityPercent: Int = 100,
     val topSurfacePattern: SurfacePattern = SurfacePattern.MONOTONIC,
+    val bottomShellLayers: Int = 3,
+    val bottomShellThicknessMm: Float = 0.0f,
+    val bottomSurfaceDensityPercent: Int = 100,
     val bottomSurfacePattern: SurfacePattern = SurfacePattern.MONOTONIC,
+    val topBottomSolidInfillWallOverlapPercent: Int = 25,
     val sparseInfillDensityPercent: Int = 15,
-    val sparseInfillPattern: InfillPattern = InfillPattern.GYROID,
+    val fillMultiline: Int = 1,
+    val sparseInfillPattern: InfillPattern = InfillPattern.CROSS_HATCH,
     val infillDirectionDeg: Int = 45,
-    val infillWallOverlapPercent: Int = 15,
+    val sparseInfillRotationTemplate: String = "",
+    val maxInfillAnchorLengthMm: Float = 20f,
+    val sparseInfillAnchorLengthPercent: Int = 400,
+    val internalSolidInfillPattern: SurfacePattern = SurfacePattern.MONOTONIC,
+    val solidInfillDirectionDeg: Int = 45,
+    val solidInfillRotationTemplate: String = "",
+    val applyGapFill: GapFillPlacement = GapFillPlacement.NOWHERE,
+    val filterOutTinyGapsMm: Float = 0f,
+    val infillWallOverlapPercent: Int = 25,
+    val alignInfillDirectionToModel: Boolean = false,
+    val infillSolidLayersInterval: Int = 0,
+    val externalBridgeInfillDirectionDeg: Int = 0,
+    val internalBridgeInfillDirectionDeg: Int = 0,
+    val relativeBridgeAngle: Boolean = true,
+    val minSparseInfillThresholdMm2: Float = 15f,
     val infillCombination: Boolean = false,
+    val detectNarrowInternalSolidInfill: Boolean = true,
+    val ensureVerticalShellThickness: VerticalShellThicknessMode = VerticalShellThicknessMode.ALL,
 
     // 3. Speed
     val initialLayerSpeedMmS: Float = 50f,
     val initialLayerInfillSpeedMmS: Float = 105f,
+    val initialLayerTravelSpeedPercent: Int = 100,
+    val numberOfSlowLayers: Int = 0,
     val outerWallSpeedMmS: Float = 120f,
     val innerWallSpeedMmS: Float = 200f,
     val smallPerimeterSpeedPercent: Int = 50,
+    val smallPerimeterThresholdMm: Float = 0f,
     val sparseInfillSpeedMmS: Float = 250f,
     val internalSolidInfillSpeedMmS: Float = 220f,
     val topSurfaceSpeedMmS: Float = 100f,
     val gapInfillSpeedMmS: Float = 180f,
     val supportSpeedMmS: Float = 150f,
-    val bridgeSpeedMmS: Float = 50f,
+    val supportInterfaceSpeedMmS: Float = 80f,
     val slowDownForOverhangs: Boolean = true,
-    val overhangSpeed25MmS: Float = 60f,
+    val slowDownForCurledPerimeters: Boolean = false,
+    val overhangSpeed10MmS: Float = 0f,
+    val overhangSpeed25MmS: Float = 50f,
     val overhangSpeed50MmS: Float = 30f,
-    val overhangSpeed75MmS: Float = 15f,
+    val overhangSpeed75MmS: Float = 10f,
+    val bridgeSpeedMmS: Float = 50f,
+    val internalBridgeSpeedPercent: Int = 150,
     val travelSpeedMmS: Float = 350f,
     val defaultAccelerationMmS2: Float = 10000f,
     val outerWallAccelerationMmS2: Float = 5000f,
     val innerWallAccelerationMmS2: Float = 8000f,
+    val bridgeAccelerationPercent: Int = 50,
+    val sparseInfillAccelerationPercent: Int = 100,
+    val internalSolidInfillAccelerationPercent: Int = 100,
     val firstLayerAccelerationMmS2: Float = 500f,
+    val firstLayerTravelAccelerationPercent: Int = 100,
+    val topSurfaceAccelerationMmS2: Float = 2000f,
     val travelAccelerationMmS2: Float = 10000f,
+    val jerkDefaultMmS: Float = 9f,
+    val jerkOuterWallMmS: Float = 9f,
+    val jerkInnerWallMmS: Float = 9f,
+    val jerkInfillMmS: Float = 9f,
+    val jerkTopSurfaceMmS: Float = 9f,
+    val jerkFirstLayerMmS: Float = 9f,
+    val jerkFirstLayerTravelMmS: Float = 9f,
+    val jerkTravelMmS: Float = 12f,
+    val extrusionRateSmoothingMm3S2: Float = 0f,
 
     // 4. Support
     val enableSupport: Boolean = false,
     val supportType: SupportType = SupportType.NORMAL_GRID,
     val supportStyle: SupportStyle = SupportStyle.DEFAULT,
-    val supportThresholdAngleDeg: Int = 45,
+    val supportThresholdAngleDeg: Int = 30,
+    val supportThresholdOverlapPercent: Int = 50,
+    val supportFirstLayerDensityPercent: Int = 90,
+    val supportFirstLayerExpansionMm: Float = 2.0f,
     val supportOnBuildPlateOnly: Boolean = false,
     val removeSmallOverhangs: Boolean = true,
     val raftLayers: Int = 0,
+    val supportFilamentBase: String = "Default",
+    val supportFilamentInterface: String = "Default",
+    val ironingSupportInterface: Boolean = false,
     val supportTopZDistanceMm: Float = 0.20f,
     val supportBottomZDistanceMm: Float = 0.20f,
-    val supportObjectXyDistanceMm: Float = 0.35f,
+    val supportWallLoops: Int = 0,
+    val supportBasePattern: SupportBasePattern = SupportBasePattern.RECTILINEAR,
+    val supportBasePatternSpacingMm: Float = 2.5f,
+    val supportPatternAngleDeg: Int = 0,
     val supportTopInterfaceLayers: Int = 2,
     val supportBottomInterfaceLayers: Int = 2,
+    val supportInterfacePattern: SupportInterfacePattern = SupportInterfacePattern.DEFAULT,
+    val supportTopInterfaceSpacingMm: Float = 0.5f,
+    val supportBottomInterfaceSpacingMm: Float = 0.5f,
+    val normalSupportExpansionMm: Float = 0.0f,
+    val supportObjectXyDistanceMm: Float = 0.35f,
+    val supportObjectFirstLayerGapMm: Float = 0.20f,
     val dontSupportBridges: Boolean = true,
 
     // 5. Multimaterial
     val enablePrimeTower: Boolean = false,
-    val primeTowerWidthMm: Float = 35f,
+    val primeTowerSkipPoints: Boolean = false,
+    val primeTowerInterfaceFeatures: Boolean = false,
+    val primeTowerInternalRibs: Boolean = true,
+    val primeTowerWidthMm: Float = 60f,
     val primeTowerBrimWidthMm: Float = 3.0f,
+    val primeTowerInfillGapPercent: Int = 150,
+    val primeTowerRotationAngleDeg: Int = 0,
+    val primeTowerMaxBridgingDistMm: Float = 10f,
+    val primeTowerPurgeLinesSpacingPercent: Int = 100,
+    val primeTowerExtraFlowPurgingPercent: Int = 100,
+    val primeTowerMaxPrintSpeedMmS: Float = 90f,
+    val primeTowerWallType: WipeTowerWallType = WipeTowerWallType.RIB,
+    val primeTowerExtraRibLengthMm: Float = 0f,
+    val primeTowerRibWidthMm: Float = 8f,
+    val primeTowerFilletWall: Boolean = true,
+    val primeTowerNoSparseLayers: Boolean = false,
     val primeVolumeMm3: Float = 45f,
+    val filamentOuterWalls: String = "Default",
+    val filamentInnerWalls: String = "Default",
+    val filamentInfill: String = "Default",
+    val filamentInternalSolidInfill: String = "Default",
+    val filamentTopSurface: String = "Default",
+    val filamentBottomSurface: String = "Default",
+    val filamentWipeTower: String = "Default",
+    val enableOozeShield: Boolean = false,
     val flushIntoInfill: Boolean = false,
     val flushIntoSupport: Boolean = true,
-    val enableOozeShield: Boolean = false,
+    val useBeamInterlocking: Boolean = false,
+    val interfaceShells: Boolean = false,
+    val maxWidthSegmentedRegionMm: Float = 0f,
+    val interlockingDepthSegmentedRegionMm: Float = 0f,
 
     // 6. Others
-    val skirtLoops: Int = 1,
+    val skirtLoops: Int = 0,
+    val skirtType: SkirtType = SkirtType.COMBINED,
+    val skirtMinExtrusionLengthMm: Float = 0f,
     val skirtDistanceMm: Float = 2.0f,
-    val brimType: BrimType = BrimType.SKIRT,
-    val brimWidthMm: Float = 4.0f,
+    val skirtStartPoint: String = "Default",
+    val skirtHeightLayers: Int = 1,
+    val skirtSpeedMmS: Float = 50f,
+    val draftShieldMode: DraftShieldMode = DraftShieldMode.DISABLED,
+    val brimType: BrimType = BrimType.NONE,
+    val brimWidthMm: Float = 5.0f,
     val brimObjectGapMm: Float = 0.1f,
+    val brimFlowRatio: Float = 1.0f,
+    val brimFollowsCompensatedOutline: Boolean = false,
+    val combineBrims: Boolean = false,
+    val slicingMode: SlicingModeType = SlicingModeType.REGULAR,
     val printSequence: PrintSequence = PrintSequence.BY_LAYER,
+    val intraLayerOrder: IntraLayerOrder = IntraLayerOrder.DEFAULT,
     val spiralVaseMode: Boolean = false,
     val fuzzySkinType: FuzzySkinType = FuzzySkinType.NONE,
     val fuzzySkinPointDistMm: Float = 0.8f,
     val fuzzySkinThicknessMm: Float = 0.3f,
+    val reduceInfillRetraction: Boolean = true,
+    val verboseGcode: Boolean = false,
+    val labelObjects: Boolean = true,
     val excludeObjectGcode: Boolean = true,
-    val reduceInfillRetraction: Boolean = true
+    val filenameFormat: String = "{input_filename_base}_{filament_type[initial_tool]}_{print_time}.gcode",
+    val changeExtrusionRoleGcode: String = "",
+    val postProcessingScripts: String = "",
+    val notes: String = ""
 )
 
 enum class ToolpathType(
@@ -571,7 +796,7 @@ object BuiltInPresets {
         p("bambu_a1_mini_04", "Bambu Lab", "Bambu Lab A1 Mini 0.4 nozzle", 180f, 180f, 180f, 0.4f, GCodeFlavor.BAMBU, 500f, 10000f, 120f),
 
         // Creality
-        p("creality_ender5p", "Creality", "Ender5P (Creality Ender-5 Plus)", 350f, 350f, 400f, 0.4f, GCodeFlavor.KLIPPER, 350f, 5000f, 300f),
+        p("creality_ender5_plus", "Creality", "Creality Ender-5 Plus 0.4 nozzle", 350f, 350f, 400f, 0.4f, GCodeFlavor.KLIPPER, 350f, 5000f, 300f),
         p("creality_k2_plus", "Creality", "Creality K2 Plus 0.4 nozzle", 350f, 350f, 350f, 0.4f, GCodeFlavor.KLIPPER, 600f, 30000f, 350f),
         p("creality_k1_max", "Creality", "Creality K1 Max 0.4 nozzle", 300f, 300f, 300f, 0.4f, GCodeFlavor.KLIPPER, 600f, 20000f, 280f),
         p("creality_k1c", "Creality", "Creality K1C Carbon 0.4 nozzle", 220f, 220f, 250f, 0.4f, GCodeFlavor.KLIPPER, 600f, 20000f, 220f),
@@ -672,8 +897,7 @@ object BuiltInPresets {
 
     val filaments: List<FilamentProfile> = listOf(
         // Bambu Lab Official Profiles
-        f("elegoo_pla_mod", "Elegoo", "Elegoo PLA Mod", "PLA", 0xFF1CA392, 1.24f, 16.99f, 220, 215, 60, 0.98f, 21f, 0.030f, 100),
-        f("bambu_pla_basic", "Bambu Lab", "Bambu PLA Basic", "PLA", 0xFF00C896, 1.24f, 19.99f, 220, 220, 55, 0.98f, 21f, 0.028f, 100),
+        f("bambu_pla_basic", "Bambu Lab", "Bambu PLA Basic", "PLA", 0xFF29ABE2, 1.24f, 19.99f, 220, 220, 55, 0.98f, 21f, 0.028f, 100),
         f("bambu_pla_matte", "Bambu Lab", "Bambu PLA Matte", "PLA-Matte", 0xFF78909C, 1.31f, 19.99f, 220, 220, 55, 0.98f, 18f, 0.032f, 100),
         f("bambu_pla_tough", "Bambu Lab", "Bambu PLA Tough", "PLA+", 0xFF2898FF, 1.23f, 24.99f, 220, 220, 55, 0.98f, 19f, 0.030f, 100),
         f("bambu_pla_cf", "Bambu Lab", "Bambu PLA-CF (Carbon Fiber)", "PLA-CF", 0xFF455A64, 1.22f, 31.99f, 225, 225, 55, 0.95f, 15f, 0.025f, 100),
@@ -737,35 +961,15 @@ object BuiltInPresets {
 
     val processes: List<ProcessProfile> = listOf(
         ProcessProfile(
-            id = "prod_024_04noz",
-            name = "Production 0.24 0.4Noz",
-            layerHeightMm = 0.24f,
-            initialLayerHeightMm = 0.20f,
-            lineWidthMm = 0.42f,
-            initialLayerLineWidthMm = 0.50f,
-            outerWallLineWidthMm = 0.40f,
-            innerWallLineWidthMm = 0.45f,
-            topSurfaceLineWidthMm = 0.45f,
-            sparseInfillLineWidthMm = 0.45f,
-            internalSolidLineWidthMm = 0.40f,
-            supportLineWidthMm = 0.40f,
-            elephantFootCompensationMm = 0.15f,
-            wallLoops = 3,
-            topShellLayers = 4,
-            bottomShellLayers = 3,
-            sparseInfillDensityPercent = 15,
-            sparseInfillPattern = InfillPattern.GYROID
-        ),
-        ProcessProfile(
             id = "020_standard",
             name = "0.20mm Standard @Orca",
             layerHeightMm = 0.20f,
-            initialLayerHeightMm = 0.24f,
-            wallLoops = 3,
+            initialLayerHeightMm = 0.20f,
+            wallLoops = 2,
             topShellLayers = 4,
             bottomShellLayers = 3,
             sparseInfillDensityPercent = 15,
-            sparseInfillPattern = InfillPattern.GYROID
+            sparseInfillPattern = InfillPattern.CROSS_HATCH
         ),
         ProcessProfile(
             id = "008_extra_fine",

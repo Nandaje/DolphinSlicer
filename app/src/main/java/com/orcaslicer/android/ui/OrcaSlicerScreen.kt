@@ -113,12 +113,12 @@ import com.orcaslicer.android.model.Vec3
 import com.orcaslicer.android.network.NetworkProtocol
 import java.util.Locale
 
-internal val OrcaActiveTabBg = Color(0xFF00796B)
+internal val OrcaActiveTabBg = Color(0xFF1B7FB0)
 
 private val OrcaColorScheme = darkColorScheme(
     primary = OrcaTeal,
-    onPrimary = Color(0xFF041F18),
-    secondary = Color(0xFF38BDF8),
+    onPrimary = Color(0xFF04141F),
+    secondary = Color(0xFF29ABE2),
     background = OrcaDarkBg,
     surface = OrcaPanelBg,
     surfaceVariant = OrcaCardBg,
@@ -465,55 +465,49 @@ private fun OrcaTopMenuAndActionBar(
     var showExportMenu by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
 
-    // 1:1 OrcaSlicer Top Navigation Bar (#1F2022 background, 38dp height)
+    // Compact, clutter-free DolphinSlicer Top Navigation Bar (#1F2022 background, 34dp height)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(38.dp)
+            .height(34.dp)
             .background(OrcaDarkBg)
             .border(1.dp, Color(0xFF151618))
             .horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        // LEFT: Home Icon + Menu Chevron + Divider + Prepare | Preview | Device | Project Tabs
+        // LEFT: Compact Dolphin Menu Button (Logo + Chevron) + Divider + Prepare | Preview | Device | Project Tabs
         Row(
             modifier = Modifier.fillMaxHeight(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Home Button (🏠)
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .clickable { onSelectWorkspaceTab(WorkspaceTab.PREPARE) }
-                    .padding(horizontal = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Home,
-                    contentDescription = "Home",
-                    tint = OrcaTextPrimary,
-                    modifier = Modifier.size(17.dp)
-                )
-            }
-
-            // Down-Chevron Main Menu Button (⌄)
+            // Unified Dolphin Logo + Main Menu Button (⌄)
             Box(modifier = Modifier.fillMaxHeight()) {
                 Row(
                     modifier = Modifier
                         .fillMaxHeight()
                         .clickable { showMainMenu = true }
                         .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
+                    OrcaWhaleVectorIcon(modifier = Modifier.size(17.dp))
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = "Main Menu",
                         tint = OrcaTextPrimary,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                 }
                 DropdownMenu(expanded = showMainMenu, onDismissRequest = { showMainMenu = false }) {
+                    DropdownMenuItem(
+                        leadingIcon = { Icon(Icons.Default.Home, contentDescription = null, tint = OrcaTeal) },
+                        text = { Text("Home (Prepare Workspace)") },
+                        onClick = {
+                            showMainMenu = false
+                            onSelectWorkspaceTab(WorkspaceTab.PREPARE)
+                        }
+                    )
                     DropdownMenuItem(
                         leadingIcon = { Icon(Icons.Default.FileOpen, contentDescription = null, tint = OrcaTeal) },
                         text = { Text("Import 3MF / STL / OBJ / G-code...") },
@@ -524,7 +518,7 @@ private fun OrcaTopMenuAndActionBar(
                     )
                     DropdownMenuItem(
                         leadingIcon = { Icon(Icons.Default.CloudDownload, contentDescription = null, tint = OrcaTeal) },
-                        text = { Text("Import All Printer & Filament Profiles from Orca Server") },
+                        text = { Text(if (state.isSyncingServerProfiles) "Syncing Profiles from Orca Server..." else "Import All Printer & Filament Profiles from Orca Server") },
                         onClick = {
                             showMainMenu = false
                             onSyncServerProfiles()
@@ -590,7 +584,7 @@ private fun OrcaTopMenuAndActionBar(
                     )
                     DropdownMenuItem(
                         leadingIcon = { Icon(Icons.Default.Tune, contentDescription = null, tint = OrcaTeal) },
-                        text = { Text("Filament & Price Calculator Settings...") },
+                        text = { Text("Filament & Currency Settings...") },
                         onClick = {
                             showMainMenu = false
                             onOpenFilamentSettings()
@@ -649,11 +643,11 @@ private fun OrcaTopMenuAndActionBar(
             Box(
                 modifier = Modifier
                     .width(1.dp)
-                    .height(20.dp)
+                    .height(18.dp)
                     .background(OrcaBorder)
             )
 
-            // 1:1 WORKSPACE TABS: Prepare | Preview | Device | Project
+            // COMPACT WORKSPACE TABS: Prepare | Preview | Device | Project
             val tabIcons = mapOf(
                 WorkspaceTab.PREPARE to Icons.Default.ViewInAr,
                 WorkspaceTab.PREVIEW to Icons.Default.Layers,
@@ -667,19 +661,19 @@ private fun OrcaTopMenuAndActionBar(
                         .fillMaxHeight()
                         .background(if (active) OrcaActiveTabBg else Color.Transparent)
                         .clickable { onSelectWorkspaceTab(tab) }
-                        .padding(horizontal = 14.dp),
+                        .padding(horizontal = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(
                         imageVector = tabIcons[tab] ?: Icons.Default.ViewInAr,
                         contentDescription = tab.title,
                         tint = if (active) Color.White else OrcaTextPrimary,
-                        modifier = Modifier.size(15.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                     Text(
                         text = tab.title,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
                         color = if (active) Color.White else OrcaTextPrimary
                     )
@@ -690,85 +684,58 @@ private fun OrcaTopMenuAndActionBar(
             Box(
                 modifier = Modifier
                     .width(1.dp)
-                    .height(20.dp)
+                    .height(18.dp)
                     .background(OrcaBorder)
             )
         }
 
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(6.dp))
 
-        // RIGHT: DolphinSlicer Brand + Server Sync + Import + Slice Plate + Export
+        // RIGHT: Compact Import Icon + Slice Button + Export Button
         Row(
             modifier = Modifier
                 .fillMaxHeight()
-                .padding(end = 8.dp),
+                .padding(end = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // DolphinSlicer Brand Pill (tap to open About & Contributors)
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color(0xFF26282B))
-                    .border(1.dp, OrcaBorder, RoundedCornerShape(4.dp))
-                    .clickable { showAboutDialog = true }
-                    .padding(horizontal = 7.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                OrcaWhaleVectorIcon(modifier = Modifier.size(16.dp))
-                Text(
-                    text = "DolphinSlicer",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
-                    color = OrcaTeal
-                )
-            }
-
-            // Sync All Profiles from Server Button
-            TopMenuIconPill(
-                icon = Icons.Default.CloudDownload,
-                label = if (state.isSyncingServerProfiles) "Syncing..." else "Sync Server",
-                onClick = onSyncServerProfiles
-            )
-
-            // Quick Import File Button
+            // Compact Import File Button
             TopMenuIconPill(
                 icon = Icons.Default.FileOpen,
                 label = "Import",
                 onClick = onImportClick
             )
 
-            // Slice Plate Button (#00796B)
+            // Slice Plate Button (Dolphin Blue #1B7FB0)
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
                     .background(if (!state.isSlicing && state.sceneObjects.isNotEmpty()) OrcaActiveTabBg else OrcaCardBg)
-                    .border(1.dp, OrcaTeal.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                    .border(1.dp, OrcaTealBright.copy(alpha = 0.65f), RoundedCornerShape(4.dp))
                     .clickable(enabled = !state.isSlicing && state.sceneObjects.isNotEmpty()) { onSliceClick() }
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 if (state.isSlicing) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(13.dp),
-                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(12.dp),
+                        strokeWidth = 1.8.dp,
                         color = Color.White
                     )
-                    Text("Slicing...", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                    Text("Slicing", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                 } else {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(15.dp)
+                        modifier = Modifier.size(13.dp)
                     )
-                    Text("Slice plate", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                    Text("Slice", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                 }
             }
 
-            // Export Dropdown Button
+            // Compact Export Dropdown Button
             Box {
                 TopMenuIconPill(
                     icon = Icons.Default.IosShare,
@@ -811,10 +778,10 @@ private fun OrcaTopMenuAndActionBar(
                         OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
                         Column {
                             Text(
-                                text = "DolphinSlicer v1.0.0",
+                                text = "DolphinSlicer v1.1.0",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = OrcaTeal
+                                color = OrcaTealBright
                             )
                             Text(
                                 text = "OrcaSlicer for Android • OpenGL ES 3.0",
@@ -1767,9 +1734,13 @@ private fun FilamentQuickCalculatorCard(
         ) {
             SectionHeaderRow(Icons.Default.Analytics, "Filament Cost & Spool Calculator")
             Text(
-                text = "Configure spool price and weight below, then tap 'Slice Plate' to compute exact filament meters, weight (g), electricity cost, and quote price.",
+                text = "Configure currency, spool price, and weight below, then tap 'Slice' to compute exact filament meters, weight (g), electricity cost, and quote price.",
                 fontSize = 11.sp,
                 color = OrcaTextSecondary
+            )
+            CustomCurrencySelectorSection(
+                currentSymbol = f.currencySymbol,
+                onCurrencyChange = { sym -> viewModel.setGlobalCurrencySymbol(sym) }
             )
             TouchNumberSetting(
                 label = "Filament Price (${f.currencySymbol} / kg)",
@@ -1890,7 +1861,11 @@ private fun SliceStatisticsSummaryCard(
                 }
             }
 
-            // Live Filament Price/kg Stepper right inside the summary card
+            // Live Currency & Filament Price/kg Stepper right inside the summary card
+            CustomCurrencySelectorSection(
+                currentSymbol = f.currencySymbol,
+                onCurrencyChange = { sym -> viewModel.setGlobalCurrencySymbol(sym) }
+            )
             TouchNumberSetting(
                 label = "Filament Price (${cur} / kg)",
                 valueText = String.format(Locale.US, "%s%.2f/kg", cur, f.costPerKgUsd),

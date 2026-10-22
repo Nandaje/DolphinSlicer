@@ -13,8 +13,9 @@
 ## ✨ Features
 
 - **1:1 OrcaSlicer UI & Workflow**:
-  - **Top Navigation Bar (`#1F2022`)**: Home menu, `Prepare` | `Preview` | `Device` | `Project` tabs, `Sync Server`, `Import`, `Slice plate`, and `Export`.
-  - **Left Sidebar (`#262729`)**: Printer & Nozzle selector, numbered multi-filament slots, `Global | Objects` process toggle, and 6 process parameter tabs (`Quality`, `Strength`, `Speed`, `Support`, `Multimaterial`, `Others`).
+  - **Compact Top Navigation Bar (`#1F2022`)**: Unified Dolphin menu, `Prepare` | `Preview` | `Device` | `Project` tabs, and quick `Import`, `Slice`, and `Export` actions.
+  - **Complete OrcaSlicer Process Settings**: Full 6-tab parameter suite (`Quality`, `Strength`, `Speed`, `Support`, `Multimaterial`, `Others`) including Precision, Seam, Scarf Joint, Ironing, Arachne/Classic Wall Generator, Overhang Speeds, Acceleration/Jerk, Prime Tower, Skirt/Brim, Special Modes, and G-code Post-Processing.
+  - **Custom Currency System & Cost Calculator**: Preset global currencies (`$`, `€`, `£`, `¥`, `Rp`, `₹`, `₩`, `R$`, `₱`, `฿`, `₫`) plus a free-form custom currency symbol/code input box that updates across all filament profiles and production cost breakdowns.
   - **3D Viewport Overlays**: Interactive 3D Orientation **ViewCube** (`Top` / `Front` / `Left` with RGB `X`/`Y`/`Z` axes), sidebar collapse button (`‹›`), and 3D manipulation gizmos (`Move`, `Scale`, `Rotate`, `Lay Flat`, `Cut at Z`, `Mirror`, `Measure`, `Auto-Arrange`, `Clone`).
 - **OpenGL ES 3.0 GPU Acceleration**:
   - Real-time 3D build plate rendering with overhang severity highlighting.

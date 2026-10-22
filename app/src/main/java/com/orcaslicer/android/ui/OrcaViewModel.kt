@@ -315,7 +315,35 @@ class OrcaViewModel : ViewModel() {
     }
 
     fun updateFilament(transform: (FilamentProfile) -> FilamentProfile) {
-        _uiState.update { it.copy(selectedFilament = transform(it.selectedFilament)) }
+        _uiState.update { state ->
+            val updated = transform(state.selectedFilament)
+            val updatedSlots = state.filamentSlots.toMutableList().apply {
+                if (state.activeFilamentSlotIndex in indices) {
+                    this[state.activeFilamentSlotIndex] = updated
+                }
+            }
+            val updatedCatalog = state.filaments.map { if (it.id == updated.id) updated else it }
+            state.copy(
+                selectedFilament = updated,
+                filamentSlots = updatedSlots,
+                filaments = updatedCatalog
+            )
+        }
+    }
+
+    fun setGlobalCurrencySymbol(symbol: String) {
+        val clean = symbol.trim().ifEmpty { "$" }
+        _uiState.update { state ->
+            val updatedSelected = state.selectedFilament.copy(currencySymbol = clean)
+            val updatedSlots = state.filamentSlots.map { it.copy(currencySymbol = clean) }
+            val updatedCatalog = state.filaments.map { it.copy(currencySymbol = clean) }
+            state.copy(
+                selectedFilament = updatedSelected,
+                filamentSlots = updatedSlots,
+                filaments = updatedCatalog,
+                statusBannerMessage = "Currency updated to '$clean' across all filament profiles"
+            )
+        }
     }
 
     fun selectObject(objectId: String?) {

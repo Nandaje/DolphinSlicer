@@ -11,8 +11,8 @@ android {
         applicationId = "com.orcaslicer.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "2.2.0-android"
+        versionCode = 2
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
