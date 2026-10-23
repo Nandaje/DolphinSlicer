@@ -507,7 +507,7 @@ private fun OrcaMobileReferenceHeader(
                                 .padding(horizontal = 3.dp, vertical = 0.5.dp)
                         ) {
                             Text(
-                                text = "v1.1.8",
+                                text = "v1.2.0",
                                 fontSize = 8.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = OrcaTealBright,
@@ -1005,7 +1005,7 @@ private fun OrcaMobileReferenceHeader(
                         OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
                         Column {
                             Text(
-                                text = "DolphinSlicer v1.1.8",
+                                text = "DolphinSlicer v1.2.0",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = OrcaTealBright
@@ -3436,144 +3436,320 @@ private fun DeviceNetworkPanel(
     var isLoadingPage by remember { mutableStateOf(false) }
     var loadProgress by remember { mutableIntStateOf(0) }
 
-    val defaultUrl = remember(state.printerHost) {
-        val h = state.printerHost.trim().ifEmpty { "192.168.1.100" }
-        if (h.startsWith("http://", ignoreCase = true) || h.startsWith("https://", ignoreCase = true)) h else "http://$h"
+    // 0 = Fluidd Web UI, 1 = Mainsail Web UI, 2 = Direct Printer HTTP Browser (http://<ip>)
+    var webUiMode by remember { mutableIntStateOf(0) }
+    var addressBarText by remember {
+        val initHost = state.printerHost.trim().ifEmpty { "192.168.1.100" }
+        mutableStateOf(if (initHost.startsWith("http", ignoreCase = true)) initHost else "http://$initHost")
     }
-    var urlInput by remember(defaultUrl) { mutableStateOf(defaultUrl) }
-    var committedUrl by remember { mutableStateOf(defaultUrl) }
+    var activeHost by remember {
+        mutableStateOf(
+            state.printerHost.trim()
+                .removePrefix("http://")
+                .removePrefix("https://")
+                .substringBefore("/")
+                .substringBefore(":")
+                .ifEmpty { "192.168.1.100" }
+        )
+    }
+
+    val slicedSummary = remember(state.sliceResult, state.sceneObjects) {
+        val stats = state.sliceResult?.statistics
+        if (stats != null) {
+            "Sliced: ${stats.formattedTotalTime} • ${String.format(Locale.US, "%.1fg (%.2fm)", stats.filamentWeightGrams, stats.filamentLengthMeters)}"
+        } else if (state.sceneObjects.isNotEmpty()) {
+            "${state.sceneObjects.size} model(s) on build plate (ready to slice)"
+        } else {
+            "No active G-code job loaded"
+        }
+    }
+
+    fun loadCurrentModeIntoWebView(view: android.webkit.WebView?, mode: Int, rawUrlOrIp: String) {
+        val wv = view ?: return
+        val trimmed = rawUrlOrIp.trim().ifEmpty { "192.168.1.100" }
+        val normalizedUrl = if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
+            trimmed
+        } else {
+            "http://$trimmed"
+        }
+        val extractedHost = normalizedUrl
+            .substringAfter("://")
+            .substringBefore("/")
+            .substringBefore(":")
+            .ifEmpty { "192.168.1.100" }
+        activeHost = extractedHost
+        addressBarText = normalizedUrl
+        viewModel.updatePrinterNetworkConfig(host = extractedHost)
+
+        when (mode) {
+            0 -> {
+                val html = KlipperWebUiTemplates.buildFluiddOrMainsailHtml(
+                    uiFlavor = "fluidd",
+                    printerHost = extractedHost,
+                    moonrakerPort = state.printerPort,
+                    printerName = state.selectedPrinter.name.substringBefore(" ("),
+                    hasSlicedGcode = state.sliceResult != null,
+                    slicedSummary = slicedSummary
+                )
+                wv.loadDataWithBaseURL("http://$extractedHost/", html, "text/html", "UTF-8", null)
+            }
+            1 -> {
+                val html = KlipperWebUiTemplates.buildFluiddOrMainsailHtml(
+                    uiFlavor = "mainsail",
+                    printerHost = extractedHost,
+                    moonrakerPort = state.printerPort,
+                    printerName = state.selectedPrinter.name.substringBefore(" ("),
+                    hasSlicedGcode = state.sliceResult != null,
+                    slicedSummary = slicedSummary
+                )
+                wv.loadDataWithBaseURL("http://$extractedHost/", html, "text/html", "UTF-8", null)
+            }
+            else -> {
+                wv.loadUrl(normalizedUrl)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(OrcaDarkBg)
     ) {
-        // 1. Compact Klipper / Mainsail / Fluidd WebUI Address & Control Bar
-        Row(
+        // 1. Top Browser-Style Printer IP / URL Navigation Bar
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(OrcaTopBarBg)
                 .border(1.dp, OrcaBorder)
-                .padding(horizontal = 8.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            // Back button
-            Box(
-                modifier = Modifier
-                    .size(26.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(OrcaInputBg)
-                    .border(1.dp, OrcaBorder, RoundedCornerShape(5.dp))
-                    .clickable {
-                        if (webViewRef?.canGoBack() == true) webViewRef?.goBack()
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("<", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = OrcaTextPrimary)
-            }
-
-            // Reload button
-            Box(
-                modifier = Modifier
-                    .size(26.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(OrcaInputBg)
-                    .border(1.dp, OrcaBorder, RoundedCornerShape(5.dp))
-                    .clickable { webViewRef?.reload() },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("↻", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = OrcaTealBright)
-            }
-
-            // URL / Klipper IP Input Box
             Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(26.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(OrcaInputBg)
-                    .border(1.dp, OrcaBorder, RoundedCornerShape(5.dp))
-                    .padding(horizontal = 8.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Wifi,
-                    contentDescription = null,
-                    tint = OrcaTealBright,
-                    modifier = Modifier.size(12.dp)
-                )
-                androidx.compose.foundation.text.BasicTextField(
-                    value = urlInput,
-                    onValueChange = { urlInput = it },
-                    singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        color = OrcaTextPrimary,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    ),
-                    cursorBrush = androidx.compose.ui.graphics.SolidColor(OrcaTealBright),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // Go button
-            Box(
-                modifier = Modifier
-                    .height(26.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(OrcaTealBright)
-                    .clickable {
-                        val cleaned = urlInput.trim().let {
-                            if (it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true)) it else "http://$it"
-                        }
-                        val hostOnly = cleaned.substringAfter("://").substringBefore(":").substringBefore("/")
-                        if (hostOnly.isNotBlank()) {
-                            viewModel.updatePrinterNetworkConfig(host = hostOnly)
-                        }
-                        committedUrl = cleaned
-                        webViewRef?.loadUrl(cleaned)
-                    }
-                    .padding(horizontal = 9.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("GO", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF070900))
-            }
-
-            // Quick Upload G-Code Pill
-            Box(
-                modifier = Modifier
-                    .height(26.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(OrcaInputBg)
-                    .border(1.dp, OrcaTealBright.copy(alpha = 0.6f), RoundedCornerShape(5.dp))
-                    .clickable(enabled = !state.isNetworkBusy) {
-                        viewModel.sendGCodeToNetworkPrinter(startImmediately = false)
-                    }
-                    .padding(horizontal = 7.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                // Back button
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(OrcaInputBg)
+                        .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
+                        .clickable {
+                            if (webViewRef?.canGoBack() == true) {
+                                webViewRef?.goBack()
+                            } else {
+                                loadCurrentModeIntoWebView(webViewRef, webUiMode, addressBarText)
+                            }
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = OrcaTealBright, modifier = Modifier.size(11.dp))
-                    Text("Send G-Code", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = OrcaTealBright, maxLines = 1, softWrap = false)
+                    Text("←", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrcaTextPrimary)
+                }
+
+                // Forward button
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(OrcaInputBg)
+                        .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
+                        .clickable {
+                            if (webViewRef?.canGoForward() == true) webViewRef?.goForward()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("→", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrcaTextSecondary)
+                }
+
+                // Reload button
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(OrcaInputBg)
+                        .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
+                        .clickable {
+                            loadCurrentModeIntoWebView(webViewRef, webUiMode, addressBarText)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("↻", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrcaTealBright)
+                }
+
+                // Browser IP / URL Input Box
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(30.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(OrcaInputBg)
+                        .border(1.dp, OrcaTealBright.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Wifi,
+                        contentDescription = null,
+                        tint = OrcaTealBright,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = addressBarText,
+                        onValueChange = { addressBarText = it },
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            color = Color.White,
+                            fontSize = 11.5.sp,
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
+                            imeAction = androidx.compose.ui.text.input.ImeAction.Go
+                        ),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                            onGo = {
+                                loadCurrentModeIntoWebView(webViewRef, webUiMode, addressBarText)
+                            }
+                        ),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(OrcaTealBright),
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (addressBarText.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clip(CircleShape)
+                                .background(OrcaElevatedBg)
+                                .clickable { addressBarText = "http://" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear IP",
+                                tint = OrcaTextSecondary,
+                                modifier = Modifier.size(10.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Connect / GO button
+                Box(
+                    modifier = Modifier
+                        .height(30.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(OrcaTealBright)
+                        .clickable {
+                            loadCurrentModeIntoWebView(webViewRef, webUiMode, addressBarText)
+                        }
+                        .padding(horizontal = 11.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("GO", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF04141E))
+                }
+
+                // Toggle Moonraker API Config Drawer
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (showApiDrawer) OrcaActiveBtnBg else OrcaInputBg)
+                        .border(1.dp, if (showApiDrawer) OrcaTealBright else OrcaBorder, RoundedCornerShape(6.dp))
+                        .clickable { showApiDrawer = !showApiDrawer },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Tune, contentDescription = "API Settings", tint = OrcaTealBright, modifier = Modifier.size(14.dp))
                 }
             }
 
-            // Toggle Moonraker API Config Drawer
-            Box(
+            // Row 2: Fluidd UI | Mainsail UI | Direct HTTP Browser Switcher + Quick Port & Upload Pills
+            Row(
                 modifier = Modifier
-                    .size(26.dp)
-                    .clip(RoundedCornerShape(5.dp))
-                    .background(if (showApiDrawer) OrcaActiveBtnBg else OrcaInputBg)
-                    .border(1.dp, if (showApiDrawer) OrcaTealBright else OrcaBorder, RoundedCornerShape(5.dp))
-                    .clickable { showApiDrawer = !showApiDrawer },
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
-                Icon(Icons.Default.Tune, contentDescription = "API Settings", tint = OrcaTealBright, modifier = Modifier.size(13.dp))
+                val modes = listOf(
+                    0 to "Fluidd Web UI",
+                    1 to "Mainsail Web UI",
+                    2 to "Direct HTTP ($activeHost)"
+                )
+                modes.forEach { (modeId, label) ->
+                    val selected = webUiMode == modeId
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(if (selected) OrcaActiveBtnBg else OrcaCardBg)
+                            .border(
+                                1.dp,
+                                if (selected) OrcaTealBright else OrcaBorder,
+                                RoundedCornerShape(5.dp)
+                            )
+                            .clickable {
+                                webUiMode = modeId
+                                loadCurrentModeIntoWebView(webViewRef, modeId, addressBarText)
+                            }
+                            .padding(horizontal = 8.dp, vertical = 3.5.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (selected) OrcaTealBright else OrcaTextSecondary,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+
+                // Quick Port Chips (:80, :7125, :4408)
+                listOf(":80", ":7125", ":4408").forEach { portSuffix ->
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(OrcaInputBg)
+                            .border(1.dp, OrcaBorder, RoundedCornerShape(5.dp))
+                            .clickable {
+                                val nextUrl = "http://$activeHost$portSuffix"
+                                addressBarText = nextUrl
+                                webUiMode = 2
+                                loadCurrentModeIntoWebView(webViewRef, 2, nextUrl)
+                            }
+                            .padding(horizontal = 6.dp, vertical = 3.5.dp)
+                    ) {
+                        Text(
+                            text = portSuffix,
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = OrcaTextPrimary
+                        )
+                    }
+                }
+
+                // Quick Upload G-Code Pill
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(OrcaInputBg)
+                        .border(1.dp, OrcaTealBright.copy(alpha = 0.6f), RoundedCornerShape(5.dp))
+                        .clickable(enabled = !state.isNetworkBusy) {
+                            viewModel.sendGCodeToNetworkPrinter(startImmediately = false)
+                        }
+                        .padding(horizontal = 7.dp, vertical = 3.5.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = OrcaTealBright, modifier = Modifier.size(10.dp))
+                        Text("Upload G-Code", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = OrcaTealBright, maxLines = 1, softWrap = false)
+                    }
+                }
             }
         }
 
@@ -3622,7 +3798,7 @@ private fun DeviceNetworkPanel(
                             value = state.printerHost,
                             onValueChange = {
                                 viewModel.updatePrinterNetworkConfig(host = it)
-                                urlInput = "http://${it.trim()}"
+                                addressBarText = "http://${it.trim()}"
                             },
                             label = { Text("Klipper IP / Hostname", fontSize = 10.sp) },
                             singleLine = true,
@@ -3646,7 +3822,7 @@ private fun DeviceNetworkPanel(
                             enabled = !state.isNetworkBusy,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = OrcaTealBright,
-                                contentColor = Color(0xFF070900)
+                                contentColor = Color(0xFF04141E)
                             )
                         ) {
                             Icon(Icons.Default.Router, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -3666,7 +3842,7 @@ private fun DeviceNetworkPanel(
                             enabled = !state.isNetworkBusy,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = OrcaTeal,
-                                contentColor = Color(0xFF070900)
+                                contentColor = Color.White
                             )
                         ) {
                             Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -3691,18 +3867,26 @@ private fun DeviceNetworkPanel(
             }
         }
 
-        // 3. Full-Screen Embedded Klipper / Mainsail / Fluidd WebView
+        // 3. Full-Screen Embedded Fluidd / Mainsail Web UI below the Browser Bar
         androidx.compose.ui.viewinterop.AndroidView(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth(),
             factory = { ctx ->
                 android.webkit.WebView(ctx).apply {
-                    setBackgroundColor(android.graphics.Color.parseColor("#0A0B0A"))
+                    layoutParams = android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    setBackgroundColor(android.graphics.Color.parseColor("#16181D"))
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
                         databaseEnabled = true
+                        allowFileAccess = true
+                        allowContentAccess = true
                         useWideViewPort = true
                         loadWithOverviewMode = true
                         builtInZoomControls = true
@@ -3712,13 +3896,26 @@ private fun DeviceNetworkPanel(
                     webViewClient = object : android.webkit.WebViewClient() {
                         override fun onPageStarted(view: android.webkit.WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                             isLoadingPage = true
-                            if (!url.isNullOrBlank()) {
-                                urlInput = url
+                            if (!url.isNullOrBlank() && url.startsWith("http")) {
+                                addressBarText = url
                             }
                         }
 
                         override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
                             isLoadingPage = false
+                        }
+
+                        override fun onReceivedError(
+                            view: android.webkit.WebView?,
+                            request: android.webkit.WebResourceRequest?,
+                            error: android.webkit.WebResourceError?
+                        ) {
+                            if (request?.isForMainFrame == true) {
+                                isLoadingPage = false
+                                // Automatically fall back to built-in Fluidd Web UI if direct HTTP server is unreachable
+                                webUiMode = 0
+                                loadCurrentModeIntoWebView(view, 0, addressBarText)
+                            }
                         }
                     }
                     webChromeClient = object : android.webkit.WebChromeClient() {
@@ -3727,8 +3924,8 @@ private fun DeviceNetworkPanel(
                             if (newProgress >= 100) isLoadingPage = false
                         }
                     }
-                    loadUrl(committedUrl)
                     webViewRef = this
+                    loadCurrentModeIntoWebView(this, webUiMode, addressBarText)
                 }
             },
             update = { view ->
