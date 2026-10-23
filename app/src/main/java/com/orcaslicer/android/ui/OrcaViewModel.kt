@@ -82,7 +82,7 @@ data class OrcaUiState(
     val activeGizmoMode: TransformGizmoMode = TransformGizmoMode.MOVE,
 
     // Maximized 3D Viewport control: collapsible dock and floating gizmo drawer
-    val isDockExpanded: Boolean = true,
+    val isDockExpanded: Boolean = false,
     val showFloatingGizmoSheet: Boolean = false,
     val showPrinterSettingsDialog: Boolean = false,
     val showFilamentSettingsDialog: Boolean = false,

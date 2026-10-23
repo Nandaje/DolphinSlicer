@@ -425,12 +425,14 @@ private fun OrcaMobileReferenceHeader(
             .fillMaxWidth()
             .background(OrcaTopBarBg)
             .border(1.dp, Color(0x14FFFFFF))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        // 1. System Bar & DolphinSlicer Brand Title + Calibration Button + Klipper Pill
+        // 1. Compact System Bar: Brand Title + Calibration Pill + Klipper Pill + Collapse Toggle
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(26.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -438,16 +440,16 @@ private fun OrcaMobileReferenceHeader(
             Box {
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .clickable { showMainMenu = true }
-                        .padding(end = 6.dp, top = 2.dp, bottom = 2.dp),
+                        .padding(end = 4.dp, top = 1.dp, bottom = 1.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(26.dp)
-                            .clip(RoundedCornerShape(7.dp))
+                            .size(20.dp)
+                            .clip(RoundedCornerShape(5.dp))
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(OrcaTeal, OrcaTealBright)
@@ -455,46 +457,52 @@ private fun OrcaMobileReferenceHeader(
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        OrcaWhaleVectorIcon(modifier = Modifier.size(18.dp))
+                        OrcaWhaleVectorIcon(modifier = Modifier.size(14.dp))
                     }
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         Text(
                             text = "DOLPHIN",
-                            fontSize = 13.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 0.8.sp,
-                            color = Color.White
+                            letterSpacing = 0.5.sp,
+                            color = Color.White,
+                            maxLines = 1,
+                            softWrap = false
                         )
                         Text(
                             text = "SLICER",
-                            fontSize = 13.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Normal,
-                            letterSpacing = 0.8.sp,
-                            color = OrcaTealBright
+                            letterSpacing = 0.5.sp,
+                            color = OrcaTealBright,
+                            maxLines = 1,
+                            softWrap = false
                         )
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(OrcaInputBg)
                                 .border(1.dp, OrcaTealBright.copy(alpha = 0.35f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                                .padding(horizontal = 3.dp, vertical = 0.5.dp)
                         ) {
                             Text(
-                                text = "v1.1.3",
-                                fontSize = 9.sp,
+                                text = "v1.1.4",
+                                fontSize = 8.sp,
                                 fontFamily = FontFamily.Monospace,
-                                color = OrcaTealBright
+                                color = OrcaTealBright,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowDown,
                             contentDescription = "Main Menu",
                             tint = OrcaTextSecondary,
-                            modifier = Modifier.size(15.dp)
+                            modifier = Modifier.size(13.dp)
                         )
                     }
                 }
@@ -632,61 +640,150 @@ private fun OrcaMobileReferenceHeader(
                 }
             }
 
-            // Right: Import Pill + Calibration Menu Button + Klipper Status Indicator
+            // Right: Calibration Menu Button + Klipper Status Indicator + Header Collapse Toggle
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Quick Import Button
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(OrcaCardBg)
-                        .border(1.dp, OrcaGlassBorder, RoundedCornerShape(8.dp))
-                        .clickable(onClick = onImportClick)
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FileOpen,
-                        contentDescription = "Import Model",
-                        tint = OrcaTealBright,
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Text(
-                        text = "Import",
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Medium,
-                        color = OrcaTextPrimary
-                    )
-                }
-
                 // Calibration Menu Button (matching #btnCalibrationMenu in mobile_3d_slicer_ui.html)
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .background(OrcaCardBg)
-                        .border(1.dp, OrcaGlassBorder, RoundedCornerShape(8.dp))
+                        .border(1.dp, OrcaGlassBorder, RoundedCornerShape(6.dp))
                         .clickable(onClick = onOpenCalibrationModal)
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                        .padding(horizontal = 6.dp, vertical = 2.5.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Speed,
                         contentDescription = "Calibration",
                         tint = OrcaTealBright,
-                        modifier = Modifier.size(12.dp)
+                        modifier = Modifier.size(10.dp)
                     )
                     Text(
                         text = "Calibration",
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Medium,
-                        color = OrcaTealBright
+                        color = OrcaTealBright,
+                        maxLines = 1,
+                        softWrap = false
                     )
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = OrcaTextSecondary,
+                        modifier = Modifier.size(10.dp)
+                    )
+                }
+
+                // Printer Status Indicator Pill (`KLIPPER` / `OCTOPRINT`) — single line guaranteed
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(EmeraldDimBg)
+                        .border(1.dp, EmeraldBorder, RoundedCornerShape(999.dp))
+                        .clickable { onSelectWorkspaceTab(WorkspaceTab.DEVICE) }
+                        .padding(horizontal = 6.dp, vertical = 2.5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .clip(CircleShape)
+                            .background(EmeraldGreen)
+                    )
+                    Text(
+                        text = if (state.printerProtocol == NetworkProtocol.MOONRAKER_KLIPPER) "KLIPPER" else "OCTOPRINT",
+                        fontSize = 8.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold,
+                        color = EmeraldGreen,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+
+                // 1-Tap Hardware Cards Collapse / Expand Toggle Button for extra 3D Viewport space
+                if (!isLandscape) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(OrcaCardBg)
+                            .border(1.dp, OrcaGlassBorder, RoundedCornerShape(5.dp))
+                            .clickable { showHardwareSelectors = !showHardwareSelectors },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (showHardwareSelectors) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = "Toggle Hardware Header",
+                            tint = OrcaTextSecondary,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // 2. Compact Hardware Hierarchy Selector (Printer + Filament Slot + Process Row — matching HTML lines 151-188)
+        if (!isLandscape && showHardwareSelectors) {
+            val cleanPrinterBaseName = state.selectedPrinter.name
+                .substringBefore(" (")
+                .replace(Regex("\\s+0\\.\\d+\\s*nozzle", RegexOption.IGNORE_CASE), "")
+                .trim()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Printer & Nozzle Selector Card (`#btnOpenPrinterSelect`)
+                Row(
+                    modifier = Modifier
+                        .weight(0.58f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(OrcaCardBg)
+                        .border(1.dp, OrcaGlassBorder, RoundedCornerShape(6.dp))
+                        .clickable(onClick = onOpenPrinterBrowser)
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Print,
+                            contentDescription = null,
+                            tint = OrcaTealBright,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "$cleanPrinterBaseName (${state.selectedPrinter.nozzleDiameterMm})",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Textured PEI • ${state.selectedPrinter.bedWidthX.toInt()}×${state.selectedPrinter.bedDepthY.toInt()}mm",
+                                fontSize = 8.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = OrcaTextSecondary,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = null,
@@ -695,104 +792,20 @@ private fun OrcaMobileReferenceHeader(
                     )
                 }
 
-                // Printer Status Indicator Pill (`KLIPPER` / `OCTOPRINT`)
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(EmeraldDimBg)
-                        .border(1.dp, EmeraldBorder, RoundedCornerShape(999.dp))
-                        .clickable { onSelectWorkspaceTab(WorkspaceTab.DEVICE) }
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(EmeraldGreen)
-                    )
-                    Text(
-                        text = if (state.printerProtocol == NetworkProtocol.MOONRAKER_KLIPPER) "KLIPPER" else "OCTOPRINT",
-                        fontSize = 9.5.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.SemiBold,
-                        color = EmeraldGreen
-                    )
-                }
-            }
-        }
-
-        // 2. Hardware Hierarchy Selector (Printer + Filament Slot + Process Row — matching HTML lines 151-188)
-        if (!isLandscape && showHardwareSelectors) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Printer & Nozzle Selector Card (`#btnOpenPrinterSelect`)
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(OrcaCardBg)
-                        .border(1.dp, OrcaGlassBorder, RoundedCornerShape(8.dp))
-                        .clickable(onClick = onOpenPrinterBrowser)
-                        .padding(horizontal = 9.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(7.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Print,
-                            contentDescription = null,
-                            tint = OrcaTealBright,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "${state.selectedPrinter.name.substringBefore(" (")} (${state.selectedPrinter.nozzleDiameterMm} nozzle)",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "Textured PEI Plate • ${state.selectedPrinter.bedWidthX.toInt()}×${state.selectedPrinter.bedDepthY.toInt()} mm",
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = OrcaTextSecondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = OrcaTextSecondary,
-                        modifier = Modifier.size(13.dp)
-                    )
-                }
-
                 // Filament Slot / AMS Spool Selector (`#btnFilamentSlots`)
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .weight(0.42f)
+                        .clip(RoundedCornerShape(6.dp))
                         .background(OrcaCardBg)
-                        .border(1.dp, OrcaGlassBorder, RoundedCornerShape(8.dp))
+                        .border(1.dp, OrcaGlassBorder, RoundedCornerShape(6.dp))
                         .clickable(onClick = onOpenFilamentBrowser)
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     // Overlapping colored spool circles
-                    Row(horizontalArrangement = Arrangement.spacedBy((-4).dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy((-3).dp)) {
                         val previewColors = if (state.filamentSlots.size >= 2) {
                             state.filamentSlots.take(3).map { Color(it.colorHex) }
                         } else {
@@ -801,84 +814,93 @@ private fun OrcaMobileReferenceHeader(
                         previewColors.forEach { c ->
                             Box(
                                 modifier = Modifier
-                                    .size(12.dp)
+                                    .size(10.dp)
                                     .clip(CircleShape)
                                     .background(c)
-                                    .border(1.5.dp, OrcaCardBg, CircleShape)
+                                    .border(1.dp, OrcaCardBg, CircleShape)
                             )
                         }
                     }
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "${state.activeFilamentSlotIndex + 1}: ${state.selectedFilament.name.take(12)}",
-                            fontSize = 10.sp,
+                            text = "${state.activeFilamentSlotIndex + 1}: ${state.selectedFilament.name}",
+                            fontSize = 9.5.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Medium,
                             color = OrcaTextPrimary,
-                            maxLines = 1
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "${state.selectedFilament.nozzleTempOtherC}° / ${state.selectedFilament.bedTempOtherC}°",
-                            fontSize = 8.5.sp,
+                            text = "${state.selectedFilament.nozzleTempOtherC}° / ${state.selectedFilament.bedTempOtherC}°C",
+                            fontSize = 8.sp,
                             fontFamily = FontFamily.Monospace,
-                            color = OrcaTealBright
+                            color = OrcaTealBright,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
             }
 
-            // Process Preset Row
+            // Compact Process Preset Row
             Box(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .background(OrcaCardBg.copy(alpha = 0.85f))
-                        .border(1.dp, Color(0x0DFFFFFF), RoundedCornerShape(8.dp))
+                        .border(1.dp, Color(0x0DFFFFFF), RoundedCornerShape(6.dp))
                         .clickable { showProcessDropdown = true }
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Tune,
                             contentDescription = null,
                             tint = OrcaTealBright,
-                            modifier = Modifier.size(12.dp)
+                            modifier = Modifier.size(10.dp)
                         )
                         Text(
                             text = "Process:",
-                            fontSize = 10.sp,
+                            fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
-                            color = OrcaTextSecondary
+                            color = OrcaTextSecondary,
+                            maxLines = 1,
+                            softWrap = false
                         )
                         Text(
                             text = state.currentProcess.name,
-                            fontSize = 10.sp,
+                            fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.SemiBold,
                             color = OrcaTextPrimary,
                             maxLines = 1,
+                            softWrap = false,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                     Text(
-                        text = "Speed: ${state.currentProcess.innerWallSpeedMmS.toInt()}mm/s",
-                        fontSize = 9.sp,
+                        text = "${state.currentProcess.innerWallSpeedMmS.toInt()}mm/s",
+                        fontSize = 8.5.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = OrcaUnitText
+                        color = OrcaUnitText,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
 
                 DropdownMenu(expanded = showProcessDropdown, onDismissRequest = { showProcessDropdown = false }) {
                     state.processPresets.forEach { proc ->
                         DropdownMenuItem(
-                            text = { Text(proc.name, fontSize = 12.sp) },
+                            text = { Text(proc.name, fontSize = 11.sp) },
                             onClick = {
                                 showProcessDropdown = false
                                 onSelectProcessPreset(proc)
@@ -889,15 +911,15 @@ private fun OrcaMobileReferenceHeader(
             }
         }
 
-        // 3. Main Segmented Tabs (PREPARE | PREVIEW | DEVICE | PROJECT — matching HTML lines 191-202)
+        // 3. Compact Main Segmented Tabs (PREPARE | PREVIEW | DEVICE | PROJECT — matching HTML lines 191-202)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(8.dp))
                 .background(OrcaDarkBg)
-                .border(1.dp, Color(0x0FFFFFFF), RoundedCornerShape(12.dp))
-                .padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                .border(1.dp, Color(0x0FFFFFFF), RoundedCornerShape(8.dp))
+                .padding(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             WorkspaceTab.entries.forEach { tab ->
@@ -905,12 +927,12 @@ private fun OrcaMobileReferenceHeader(
                 Row(
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .background(if (active) OrcaActiveBtnBg else Color.Transparent)
                         .border(
                             width = 1.dp,
                             color = if (active) OrcaActiveBtnBorder else Color.Transparent,
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(6.dp)
                         )
                         .clickable {
                             if (tab == WorkspaceTab.PREVIEW && state.sliceResult == null && state.sceneObjects.isNotEmpty()) {
@@ -919,22 +941,24 @@ private fun OrcaMobileReferenceHeader(
                                 onSelectWorkspaceTab(tab)
                             }
                         }
-                        .padding(vertical = 5.dp),
+                        .padding(vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Text(
                         text = tab.title.uppercase(Locale.US),
-                        fontSize = 11.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.7.sp,
-                        color = if (active) OrcaTealBright else OrcaTextSecondary
+                        letterSpacing = 0.5.sp,
+                        color = if (active) OrcaTealBright else OrcaTextSecondary,
+                        maxLines = 1,
+                        softWrap = false
                     )
                     if (tab == WorkspaceTab.DEVICE) {
-                        Spacer(Modifier.width(4.dp))
+                        Spacer(Modifier.width(3.dp))
                         Box(
                             modifier = Modifier
-                                .size(5.dp)
+                                .size(4.5.dp)
                                 .clip(CircleShape)
                                 .background(EmeraldGreen)
                         )
@@ -964,7 +988,7 @@ private fun OrcaMobileReferenceHeader(
                         OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
                         Column {
                             Text(
-                                text = "DolphinSlicer v1.1.3",
+                                text = "DolphinSlicer v1.1.4",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = OrcaTealBright
@@ -1109,9 +1133,9 @@ private fun ViewportWithTouchOverlays(
             Column(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = 10.dp, top = 10.dp, bottom = 16.dp)
+                    .padding(start = 6.dp, top = 6.dp, bottom = 8.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 if (isLandscape) {
@@ -1205,72 +1229,80 @@ private fun ViewportWithTouchOverlays(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = 54.dp, top = 10.dp, end = 64.dp)
+                    .padding(start = 40.dp, top = 6.dp, end = 44.dp)
             ) {
                 if (selObj != null) {
                     val dims = selObj.worldBoundingBox().size
                     Row(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(6.dp))
                             .background(OrcaGlassBg)
-                            .border(1.dp, OrcaGlassBorder, RoundedCornerShape(8.dp))
+                            .border(1.dp, OrcaGlassBorder, RoundedCornerShape(6.dp))
                             .clickable { viewModel.setFloatingGizmoSheetVisible(!state.showFloatingGizmoSheet) }
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                            .padding(horizontal = 8.dp, vertical = 3.5.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(6.dp)
+                                .size(5.dp)
                                 .clip(CircleShape)
                                 .background(OrcaTealBright)
                         )
                         Text(
                             text = selObj.name,
-                            fontSize = 10.sp,
+                            fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White,
                             maxLines = 1,
+                            softWrap = false,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = "|",
-                            fontSize = 10.sp,
+                            fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
-                            color = OrcaUnitText
+                            color = OrcaUnitText,
+                            maxLines = 1,
+                            softWrap = false
                         )
                         Text(
-                            text = String.format(Locale.US, "%.0f×%.0f×%.0f mm", dims.x, dims.y, dims.z),
-                            fontSize = 10.sp,
+                            text = String.format(Locale.US, "%.0f×%.0f×%.0fmm", dims.x, dims.y, dims.z),
+                            fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
-                            color = OrcaTextSecondary
+                            color = OrcaTextSecondary,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 } else {
                     // Clean Empty Plate Badge (no example object preloaded)
                     Row(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(6.dp))
                             .background(OrcaGlassBg)
-                            .border(1.dp, OrcaActiveBtnBorder, RoundedCornerShape(8.dp))
+                            .border(1.dp, OrcaActiveBtnBorder, RoundedCornerShape(6.dp))
                             .clickable(onClick = onImportClick)
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                            .padding(horizontal = 8.dp, vertical = 3.5.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = null,
                             tint = OrcaTealBright,
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(11.dp)
                         )
                         Text(
-                            text = "Empty Plate — Tap to Import 3MF / STL / OBJ",
-                            fontSize = 10.sp,
+                            text = "Empty Plate — Tap to Import 3MF / STL",
+                            fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.SemiBold,
-                            color = OrcaTextPrimary
+                            color = OrcaTextPrimary,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -1282,13 +1314,13 @@ private fun ViewportWithTouchOverlays(
             Column(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = 10.dp, top = 10.dp)
-                    .width(152.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .padding(start = 6.dp, top = 6.dp)
+                    .width(136.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(OrcaGlassBg)
-                    .border(1.dp, OrcaGlassBorder, RoundedCornerShape(12.dp))
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                    .border(1.dp, OrcaGlassBorder, RoundedCornerShape(10.dp))
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 Row(
                     modifier = Modifier
@@ -1299,21 +1331,21 @@ private fun ViewportWithTouchOverlays(
                 ) {
                     Text(
                         text = "LINE TYPE",
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.6.sp,
+                        letterSpacing = 0.5.sp,
                         color = Color.White
                     )
                     Icon(
                         imageVector = Icons.Default.Layers,
                         contentDescription = "Toggle Legend",
                         tint = OrcaTealBright,
-                        modifier = Modifier.size(13.dp)
+                        modifier = Modifier.size(12.dp)
                     )
                 }
 
                 if (!legendCollapsed) {
-                    HorizontalDivider(color = OrcaGlassBorder, modifier = Modifier.padding(vertical = 2.dp))
+                    HorizontalDivider(color = OrcaGlassBorder, modifier = Modifier.padding(vertical = 1.dp))
                     val legendItems = listOf(
                         Triple(Color(0xFFEE5D32), "Outer wall", true),
                         Triple(Color(0xFFF1C40F), "Inner wall", true),
@@ -1326,17 +1358,17 @@ private fun ViewportWithTouchOverlays(
                     legendItems.forEach { (swatchColor, label, _) ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(width = 10.dp, height = 8.dp)
+                                    .size(width = 9.dp, height = 7.dp)
                                     .clip(RoundedCornerShape(2.dp))
                                     .background(swatchColor)
                             )
                             Text(
                                 text = label,
-                                fontSize = 9.sp,
+                                fontSize = 8.5.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = OrcaTextPrimary,
                                 maxLines = 1,
@@ -1351,30 +1383,30 @@ private fun ViewportWithTouchOverlays(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(4.dp))
                             .clickable { viewModel.toggleTravelMoves() }
-                            .padding(vertical = 2.dp),
+                            .padding(vertical = 1.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(width = 10.dp, height = 8.dp)
+                                    .size(width = 9.dp, height = 7.dp)
                                     .clip(RoundedCornerShape(2.dp))
                                     .background(Color(0xFF4B5563))
                             )
                             Text(
                                 text = "Travel moves",
-                                fontSize = 9.sp,
+                                fontSize = 8.5.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = if (state.showTravelMoves) Color.White else OrcaTextSecondary
                             )
                         }
                         Text(
                             text = if (state.showTravelMoves) "ON" else "OFF",
-                            fontSize = 8.5.sp,
+                            fontSize = 8.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             color = if (state.showTravelMoves) OrcaTealBright else OrcaUnitText
@@ -1397,17 +1429,17 @@ private fun ViewportWithTouchOverlays(
         Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 10.dp, end = 10.dp),
+                .padding(top = 6.dp, end = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             // Orientation Cube Gizmo Indicator (`#cubeGizmo`)
             Column(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(8.dp))
                     .background(OrcaGlassBg)
-                    .border(1.dp, OrcaGlassBorder, RoundedCornerShape(12.dp))
+                    .border(1.dp, OrcaGlassBorder, RoundedCornerShape(8.dp))
                     .clickable {
                         val (preset, _) = camPresets[camPresetIndex % camPresets.size]
                         viewModel.setCameraPreset(preset)
@@ -1418,43 +1450,47 @@ private fun ViewportWithTouchOverlays(
             ) {
                 Text(
                     text = camPresets[camPresetIndex % camPresets.size].second,
-                    fontSize = 8.5.sp,
+                    fontSize = 7.5.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
-                    color = OrcaTealBright
+                    color = OrcaTealBright,
+                    maxLines = 1,
+                    softWrap = false
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("X", fontSize = 7.sp, fontFamily = FontFamily.Monospace, color = Color(0xFFEF5350))
-                    Text("Y", fontSize = 7.sp, fontFamily = FontFamily.Monospace, color = EmeraldGreen)
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("X", fontSize = 6.sp, fontFamily = FontFamily.Monospace, color = Color(0xFFEF5350))
+                    Text("Y", fontSize = 6.sp, fontFamily = FontFamily.Monospace, color = EmeraldGreen)
                 }
             }
 
             // `ISO` Button (`#btnIsoView`)
             Box(
                 modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(6.dp))
                     .background(OrcaGlassBg)
-                    .border(1.dp, OrcaGlassBorder, RoundedCornerShape(8.dp))
+                    .border(1.dp, OrcaGlassBorder, RoundedCornerShape(6.dp))
                     .clickable { viewModel.setCameraPreset(ViewportCameraPreset.ISOMETRIC) },
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "ISO",
-                    fontSize = 9.5.sp,
+                    fontSize = 8.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
-                    color = OrcaTealBright
+                    color = OrcaTealBright,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
 
             // `Fit to Bed` Button (`#btnResetCam`)
             Box(
                 modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(6.dp))
                     .background(OrcaGlassBg)
-                    .border(1.dp, OrcaGlassBorder, RoundedCornerShape(8.dp))
+                    .border(1.dp, OrcaGlassBorder, RoundedCornerShape(6.dp))
                     .clickable { viewModel.resetCameraView() },
                 contentAlignment = Alignment.Center
             ) {
@@ -1462,7 +1498,7 @@ private fun ViewportWithTouchOverlays(
                     imageVector = Icons.Default.Fullscreen,
                     contentDescription = "Fit to Bed",
                     tint = OrcaTextPrimary,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(14.dp)
                 )
             }
         }
@@ -1481,7 +1517,7 @@ private fun ViewportWithTouchOverlays(
             Column(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 10.dp, top = 136.dp, bottom = 58.dp)
+                    .padding(end = 6.dp, top = 104.dp, bottom = 48.dp)
                     .fillMaxHeight(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
@@ -1489,24 +1525,28 @@ private fun ViewportWithTouchOverlays(
                 // Floating Layer Number Bubble (`#layerInfoTag`)
                 Column(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .background(OrcaGlassBg)
-                        .border(1.dp, OrcaActiveBtnBorder, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 7.dp, vertical = 4.dp),
+                        .border(1.dp, OrcaActiveBtnBorder, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 5.dp, vertical = 3.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
                         text = "L: ${safeMaxLayer + 1}/$totalLayers",
-                        fontSize = 9.5.sp,
+                        fontSize = 8.5.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        color = OrcaTealBright
+                        color = OrcaTealBright,
+                        maxLines = 1,
+                        softWrap = false
                     )
                     Text(
                         text = String.format(Locale.US, "Z: %.1fmm", topLayer.zHeightMm),
-                        fontSize = 8.sp,
+                        fontSize = 7.5.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = OrcaTextSecondary
+                        color = OrcaTextSecondary,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
 
@@ -1515,8 +1555,8 @@ private fun ViewportWithTouchOverlays(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(vertical = 6.dp)
-                        .width(30.dp)
+                        .padding(vertical = 4.dp)
+                        .width(24.dp)
                         .clip(RoundedCornerShape(999.dp))
                         .background(OrcaTopBarBg.copy(alpha = 0.85f))
                         .border(1.dp, OrcaGlassBorder, RoundedCornerShape(999.dp))
@@ -1530,14 +1570,14 @@ private fun ViewportWithTouchOverlays(
                                 viewModel.updateLayerRange(state.minVisibleLayer, targetLayer)
                             }
                         }
-                        .padding(vertical = 8.dp),
+                        .padding(vertical = 6.dp),
                     contentAlignment = Alignment.BottomCenter
                 ) {
                     // Track background line
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .width(6.dp)
+                            .width(5.dp)
                             .clip(RoundedCornerShape(999.dp))
                             .background(OrcaElevatedBg)
                     )
@@ -1545,7 +1585,7 @@ private fun ViewportWithTouchOverlays(
                     Box(
                         modifier = Modifier
                             .fillMaxHeight(layerFraction.coerceIn(0.04f, 1f))
-                            .width(6.dp)
+                            .width(5.dp)
                             .clip(RoundedCornerShape(999.dp))
                             .background(
                                 Brush.verticalGradient(
@@ -1562,15 +1602,15 @@ private fun ViewportWithTouchOverlays(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(18.dp)
+                                .size(15.dp)
                                 .clip(CircleShape)
                                 .background(OrcaTopBarBg)
-                                .border(2.dp, OrcaTealBright, CircleShape),
+                                .border(1.5.dp, OrcaTealBright, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(6.dp)
+                                    .size(5.dp)
                                     .clip(CircleShape)
                                     .background(OrcaTealBright)
                             )
@@ -1580,15 +1620,15 @@ private fun ViewportWithTouchOverlays(
 
                 // Micro-steppers & Layer Auto-Play Button (`#btnPlayLayers`, `#layerUpBtn`, `#layerDownBtn`)
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(28.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(6.dp))
                             .background(if (isPlayingLayers) OrcaActiveBtnBg else OrcaGlassBg)
-                            .border(1.dp, if (isPlayingLayers) OrcaActiveBtnBorder else OrcaGlassBorder, RoundedCornerShape(8.dp))
+                            .border(1.dp, if (isPlayingLayers) OrcaActiveBtnBorder else OrcaGlassBorder, RoundedCornerShape(6.dp))
                             .clickable { isPlayingLayers = !isPlayingLayers },
                         contentAlignment = Alignment.Center
                     ) {
@@ -1596,15 +1636,15 @@ private fun ViewportWithTouchOverlays(
                             imageVector = if (isPlayingLayers) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = "Play Layer Simulation",
                             tint = OrcaTealBright,
-                            modifier = Modifier.size(15.dp)
+                            modifier = Modifier.size(13.dp)
                         )
                     }
                     Box(
                         modifier = Modifier
-                            .size(28.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(6.dp))
                             .background(OrcaGlassBg)
-                            .border(1.dp, OrcaGlassBorder, RoundedCornerShape(8.dp))
+                            .border(1.dp, OrcaGlassBorder, RoundedCornerShape(6.dp))
                             .clickable {
                                 viewModel.updateLayerRange(state.minVisibleLayer, (safeMaxLayer + 1).coerceAtMost(totalLayers - 1))
                             },
@@ -1614,15 +1654,15 @@ private fun ViewportWithTouchOverlays(
                             imageVector = Icons.Default.KeyboardArrowUp,
                             contentDescription = "Layer Up",
                             tint = OrcaTextPrimary,
-                            modifier = Modifier.size(15.dp)
+                            modifier = Modifier.size(13.dp)
                         )
                     }
                     Box(
                         modifier = Modifier
-                            .size(28.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(6.dp))
                             .background(OrcaGlassBg)
-                            .border(1.dp, OrcaGlassBorder, RoundedCornerShape(8.dp))
+                            .border(1.dp, OrcaGlassBorder, RoundedCornerShape(6.dp))
                             .clickable {
                                 viewModel.updateLayerRange(state.minVisibleLayer, (safeMaxLayer - 1).coerceAtLeast(0))
                             },
@@ -1632,7 +1672,7 @@ private fun ViewportWithTouchOverlays(
                             imageVector = Icons.Default.KeyboardArrowDown,
                             contentDescription = "Layer Down",
                             tint = OrcaTextPrimary,
-                            modifier = Modifier.size(15.dp)
+                            modifier = Modifier.size(13.dp)
                         )
                     }
                 }
@@ -1642,20 +1682,20 @@ private fun ViewportWithTouchOverlays(
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 12.dp, end = 52.dp, bottom = 10.dp)
+                    .padding(start = 8.dp, end = 40.dp, bottom = 6.dp)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(10.dp))
                     .background(OrcaGlassBg)
-                    .border(1.dp, OrcaGlassBorder, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .border(1.dp, OrcaGlassBorder, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Navigation,
                     contentDescription = null,
                     tint = OrcaTealBright,
-                    modifier = Modifier.size(15.dp)
+                    modifier = Modifier.size(13.dp)
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Row(
@@ -1664,13 +1704,13 @@ private fun ViewportWithTouchOverlays(
                     ) {
                         Text(
                             text = "Move: ${(state.activeLayerProgress * 100).toInt()}%",
-                            fontSize = 9.sp,
+                            fontSize = 8.5.sp,
                             fontFamily = FontFamily.Monospace,
                             color = Color.White
                         )
                         Text(
                             text = "Speed: ${state.currentProcess.outerWallSpeedMmS.toInt()} mm/s • Combing: ${state.currentProcess.combingMode.label}",
-                            fontSize = 9.sp,
+                            fontSize = 8.5.sp,
                             fontFamily = FontFamily.Monospace,
                             color = OrcaTealBright
                         )
@@ -1686,7 +1726,7 @@ private fun ViewportWithTouchOverlays(
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(20.dp)
+                            .height(18.dp)
                     )
                 }
             }
@@ -1698,7 +1738,7 @@ private fun ViewportWithTouchOverlays(
             FloatingGizmoControlCard(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 54.dp, bottom = 10.dp, end = 12.dp),
+                    .padding(start = 42.dp, bottom = 8.dp, end = 8.dp),
                 state = state,
                 selected = selObj,
                 viewModel = viewModel
@@ -1721,7 +1761,7 @@ private fun ViewportWithTouchOverlays(
                     modifier = Modifier.padding(24.dp)
                 ) {
                     Box(
-                        modifier = Modifier.size(84.dp),
+                        modifier = Modifier.size(72.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         CircularProgressIndicator(
@@ -1731,33 +1771,33 @@ private fun ViewportWithTouchOverlays(
                             trackColor = OrcaInputBg,
                             strokeWidth = 4.dp
                         )
-                        OrcaWhaleVectorIcon(modifier = Modifier.size(34.dp))
+                        OrcaWhaleVectorIcon(modifier = Modifier.size(30.dp))
                     }
                     Text(
                         text = if (state.isSlicing) "DOLPHIN SLICING ENGINE" else "ORCA PROFILE SERVER SYNC",
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 1.sp,
+                        letterSpacing = 0.8.sp,
                         color = Color.White
                     )
                     Text(
                         text = state.statusBannerMessage,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
                         color = OrcaTealBright
                     )
                     LinearProgressIndicator(
                         progress = { if (state.isSlicing) state.sliceProgress.coerceIn(0.02f, 1f) else 0.65f },
                         modifier = Modifier
-                            .width(220.dp)
-                            .height(6.dp)
+                            .width(200.dp)
+                            .height(5.dp)
                             .clip(RoundedCornerShape(999.dp)),
                         color = OrcaTealBright,
                         trackColor = OrcaInputBg
                     )
                     Text(
                         text = "$pct%",
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         fontFamily = FontFamily.Monospace,
                         color = OrcaTextSecondary
                     )
@@ -1777,13 +1817,13 @@ private fun GlassToolIconButton(
 ) {
     Box(
         modifier = Modifier
-            .size(36.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .size(28.dp)
+            .clip(RoundedCornerShape(8.dp))
             .background(if (active) OrcaActiveBtnBg else OrcaGlassBg)
             .border(
                 width = 1.dp,
                 color = if (active) OrcaActiveBtnBorder else OrcaGlassBorder,
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(8.dp)
             )
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -1792,7 +1832,7 @@ private fun GlassToolIconButton(
             imageVector = icon,
             contentDescription = title,
             tint = if (active) OrcaTealBright else tint,
-            modifier = Modifier.size(17.dp)
+            modifier = Modifier.size(14.dp)
         )
     }
 }
@@ -1822,22 +1862,22 @@ private fun OrcaReferenceBottomDrawer(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
             .background(OrcaPanelBg)
-            .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
     ) {
         // 1. Drag Handle (`#drawerDragHandle`)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { viewModel.toggleDockExpanded() }
-                .padding(top = 8.dp, bottom = 4.dp),
+                .padding(top = 5.dp, bottom = 2.dp),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
-                    .width(40.dp)
-                    .height(4.dp)
+                    .width(32.dp)
+                    .height(3.dp)
                     .clip(RoundedCornerShape(999.dp))
                     .background(Color(0xFF475569))
             )
@@ -1847,45 +1887,53 @@ private fun OrcaReferenceBottomDrawer(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 4.dp),
+                .padding(horizontal = 10.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
                 Text(
                     text = "PRINT ESTIMATION",
-                    fontSize = 9.5.sp,
+                    fontSize = 8.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.8.sp,
-                    color = OrcaTextSecondary
+                    letterSpacing = 0.6.sp,
+                    color = OrcaTextSecondary,
+                    maxLines = 1,
+                    softWrap = false
                 )
                 Row(
                     verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Text(
                         text = stats?.formattedTotalTime ?: if (state.sceneObjects.isEmpty()) "Empty Plate" else "Ready to Slice",
-                        fontSize = 16.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = Color.White
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false
                     )
                     Text(
                         text = if (stats != null) {
                             String.format(Locale.US, "%.1fg (%.2fm)", stats.filamentWeightGrams, stats.filamentLengthMeters)
                         } else {
-                            "${state.sceneObjects.size} object(s)"
+                            "${state.sceneObjects.size} obj"
                         },
-                        fontSize = 11.sp,
+                        fontSize = 9.5.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.SemiBold,
-                        color = OrcaTealBright
+                        color = OrcaTealBright,
+                        maxLines = 1,
+                        softWrap = false
                     )
                     if (cost != null) {
                         Text(
                             text = String.format(Locale.US, "~%s%.2f", cur, cost.totalProductionCost),
-                            fontSize = 10.sp,
+                            fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
-                            color = OrcaTextSecondary
+                            color = OrcaTextSecondary,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -1894,65 +1942,69 @@ private fun OrcaReferenceBottomDrawer(
             // Right: Sub-view pills (`Objects`, `Cost`) + `Settings / Collapse` button (`#toggleDrawerBtn`)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 // Objects pill
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .background(if (state.isDockExpanded && drawerSubView == 1) OrcaActiveBtnBg else OrcaGlassBg)
                         .border(
                             1.dp,
                             if (state.isDockExpanded && drawerSubView == 1) OrcaActiveBtnBorder else OrcaGlassBorder,
-                            RoundedCornerShape(8.dp)
+                            RoundedCornerShape(6.dp)
                         )
                         .clickable {
                             drawerSubView = 1
                             if (!state.isDockExpanded) viewModel.toggleDockExpanded()
                         }
-                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                        .padding(horizontal = 6.dp, vertical = 3.5.dp)
                 ) {
                     Text(
                         text = "Objects (${state.sceneObjects.size})",
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = if (state.isDockExpanded && drawerSubView == 1) OrcaTealBright else OrcaTextSecondary
+                        color = if (state.isDockExpanded && drawerSubView == 1) OrcaTealBright else OrcaTextSecondary,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
 
                 // Cost pill
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .background(if (state.isDockExpanded && drawerSubView == 2) OrcaActiveBtnBg else OrcaGlassBg)
                         .border(
                             1.dp,
                             if (state.isDockExpanded && drawerSubView == 2) OrcaActiveBtnBorder else OrcaGlassBorder,
-                            RoundedCornerShape(8.dp)
+                            RoundedCornerShape(6.dp)
                         )
                         .clickable {
                             drawerSubView = 2
                             if (!state.isDockExpanded) viewModel.toggleDockExpanded()
                         }
-                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                        .padding(horizontal = 6.dp, vertical = 3.5.dp)
                 ) {
                     Text(
                         text = "Cost",
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = if (state.isDockExpanded && drawerSubView == 2) OrcaTealBright else OrcaTextSecondary
+                        color = if (state.isDockExpanded && drawerSubView == 2) OrcaTealBright else OrcaTextSecondary,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
 
                 // Settings / Collapse toggle button (`#toggleDrawerBtn`)
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(6.dp))
                         .background(if (state.isDockExpanded && drawerSubView == 0) OrcaActiveBtnBg else OrcaGlassBg)
                         .border(
                             1.dp,
                             if (state.isDockExpanded && drawerSubView == 0) OrcaActiveBtnBorder else OrcaGlassBorder,
-                            RoundedCornerShape(8.dp)
+                            RoundedCornerShape(6.dp)
                         )
                         .clickable {
                             if (state.isDockExpanded && drawerSubView == 0) {
@@ -1962,21 +2014,23 @@ private fun OrcaReferenceBottomDrawer(
                                 if (!state.isDockExpanded) viewModel.toggleDockExpanded()
                             }
                         }
-                        .padding(horizontal = 9.dp, vertical = 5.dp),
+                        .padding(horizontal = 7.dp, vertical = 3.5.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Text(
                         text = if (state.isDockExpanded && drawerSubView == 0) "Collapse" else "Settings",
-                        fontSize = 10.5.sp,
+                        fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = OrcaTextPrimary
+                        color = OrcaTextPrimary,
+                        maxLines = 1,
+                        softWrap = false
                     )
                     Icon(
                         imageVector = if (state.isDockExpanded && drawerSubView == 0) Icons.Default.ExpandMore else Icons.Default.Tune,
                         contentDescription = null,
                         tint = OrcaTealBright,
-                        modifier = Modifier.size(13.dp)
+                        modifier = Modifier.size(11.dp)
                     )
                 }
             }
@@ -1987,8 +2041,8 @@ private fun OrcaReferenceBottomDrawer(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 285.dp)
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .heightIn(max = 215.dp)
+                    .padding(horizontal = 10.dp, vertical = 3.dp)
             ) {
                 when (drawerSubView) {
                     0 -> {
@@ -1997,29 +2051,31 @@ private fun OrcaReferenceBottomDrawer(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .horizontalScroll(rememberScrollState())
-                                .padding(bottom = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                .padding(bottom = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             ProcessCategoryTab.entries.forEach { tab ->
                                 val active = state.activeProcessTab == tab
                                 Box(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
+                                        .clip(RoundedCornerShape(5.dp))
                                         .background(if (active) OrcaActiveBtnBg else OrcaCardBg)
                                         .border(
                                             1.dp,
                                             if (active) OrcaActiveBtnBorder else Color.Transparent,
-                                            RoundedCornerShape(6.dp)
+                                            RoundedCornerShape(5.dp)
                                         )
                                         .clickable { viewModel.selectProcessTab(tab) }
-                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                        .padding(horizontal = 8.dp, vertical = 3.5.dp)
                                 ) {
                                     Text(
                                         text = tab.title.uppercase(Locale.US),
-                                        fontSize = 10.sp,
+                                        fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (active) OrcaTealBright else OrcaTextSecondary
+                                        color = if (active) OrcaTealBright else OrcaTextSecondary,
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }
@@ -2027,27 +2083,27 @@ private fun OrcaReferenceBottomDrawer(
                             // Search parameter toggle pill
                             Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
+                                    .clip(RoundedCornerShape(5.dp))
                                     .background(if (state.showProcessSearchBar) OrcaActiveBtnBg else OrcaCardBg)
                                     .clickable { viewModel.toggleProcessSearchBar() }
-                                    .padding(horizontal = 8.dp, vertical = 5.dp)
+                                    .padding(horizontal = 7.dp, vertical = 3.5.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Search,
                                     contentDescription = "Search Settings",
                                     tint = if (state.showProcessSearchBar) OrcaTealBright else OrcaTextSecondary,
-                                    modifier = Modifier.size(13.dp)
+                                    modifier = Modifier.size(11.dp)
                                 )
                             }
                         }
 
-                        HorizontalDivider(color = Color(0x1AFFFFFF), modifier = Modifier.padding(bottom = 6.dp))
+                        HorizontalDivider(color = Color(0x1AFFFFFF), modifier = Modifier.padding(bottom = 4.dp))
 
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             // Reference Quick Tuning Cards from mobile_3d_slicer_ui.html
                             QuickReferenceParameterCards(state = state, viewModel = viewModel)
@@ -2107,8 +2163,8 @@ private fun OrcaReferenceBottomDrawer(
             modifier = Modifier
                 .fillMaxWidth()
                 .border(1.dp, Color(0x14FFFFFF))
-                .padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Left Primary Button: `SLICE PLATE` (or `IMPORT MODEL` when plate is empty)
@@ -2116,7 +2172,7 @@ private fun OrcaReferenceBottomDrawer(
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(10.dp))
                     .background(
                         Brush.horizontalGradient(
                             colors = listOf(OrcaTeal, OrcaTealBright)
@@ -2129,7 +2185,7 @@ private fun OrcaReferenceBottomDrawer(
                             onImportClick()
                         }
                     }
-                    .padding(vertical = 11.dp, horizontal = 12.dp),
+                    .padding(vertical = 8.dp, horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
@@ -2137,9 +2193,9 @@ private fun OrcaReferenceBottomDrawer(
                     imageVector = if (hasObjects) Icons.Default.Layers else Icons.Default.FileOpen,
                     contentDescription = null,
                     tint = Color(0xFF06131C),
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(14.dp)
                 )
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(5.dp))
                 Text(
                     text = when {
                         state.isSlicing -> "SLICING..."
@@ -2147,10 +2203,12 @@ private fun OrcaReferenceBottomDrawer(
                         state.sliceResult != null && state.activeWorkspaceTab == WorkspaceTab.PREVIEW -> "RE-SLICE"
                         else -> "SLICE PLATE"
                     },
-                    fontSize = 12.sp,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 0.8.sp,
-                    color = Color(0xFF06131C)
+                    letterSpacing = 0.6.sp,
+                    color = Color(0xFF06131C),
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
 
@@ -2159,11 +2217,11 @@ private fun OrcaReferenceBottomDrawer(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(10.dp))
                         .background(OrcaInputBg)
-                        .border(1.dp, OrcaActiveBtnBorder, RoundedCornerShape(12.dp))
+                        .border(1.dp, OrcaActiveBtnBorder, RoundedCornerShape(10.dp))
                         .clickable { showPrintExportMenu = true }
-                        .padding(vertical = 11.dp, horizontal = 12.dp),
+                        .padding(vertical = 8.dp, horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
@@ -2171,15 +2229,17 @@ private fun OrcaReferenceBottomDrawer(
                         imageVector = Icons.Default.Wifi,
                         contentDescription = null,
                         tint = OrcaTealBright,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(14.dp)
                     )
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(5.dp))
                     Text(
                         text = "PRINT / EXPORT",
-                        fontSize = 12.sp,
+                        fontSize = 10.5.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 0.8.sp,
-                        color = OrcaTealBright
+                        letterSpacing = 0.6.sp,
+                        color = OrcaTealBright,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
 

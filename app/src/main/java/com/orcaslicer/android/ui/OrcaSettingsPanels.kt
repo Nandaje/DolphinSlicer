@@ -149,12 +149,12 @@ fun OrcaSectionGroupHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 10.dp, bottom = 4.dp),
+            .padding(top = 6.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(16.dp)
+                .size(14.dp)
                 .clip(RoundedCornerShape(3.dp))
                 .background(Color(0xFF163242))
                 .border(1.dp, OrcaTealBright.copy(alpha = 0.7f), RoundedCornerShape(3.dp)),
@@ -164,17 +164,17 @@ fun OrcaSectionGroupHeader(
                 imageVector = icon,
                 contentDescription = null,
                 tint = OrcaTealBright,
-                modifier = Modifier.size(11.dp)
+                modifier = Modifier.size(9.dp)
             )
         }
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(5.dp))
         Text(
             text = title,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             color = OrcaTextPrimary
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(6.dp))
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -227,25 +227,25 @@ fun OrcaParamNumberRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 2.5.dp),
+                .padding(vertical = 1.5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = label,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = if (boldLabel) FontWeight.Bold else FontWeight.Normal,
                 color = if (!enabled) OrcaUnitText else if (boldLabel) Color.White else OrcaTextPrimary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
-                    .weight(0.54f)
-                    .padding(start = 10.dp, end = 6.dp)
+                    .weight(0.56f)
+                    .padding(start = 6.dp, end = 6.dp)
             )
 
             Row(
                 modifier = Modifier
-                    .weight(0.46f)
-                    .height(28.dp)
+                    .weight(0.44f)
+                    .height(24.dp)
                     .clip(RoundedCornerShape(4.dp))
                     .background(if (enabled) OrcaInputBg else Color(0xFF232427))
                     .border(
@@ -254,7 +254,7 @@ fun OrcaParamNumberRow(
                         shape = RoundedCornerShape(4.dp)
                     )
                     .clickable(enabled = enabled) { expandedTouchAdjuster = !expandedTouchAdjuster }
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -271,7 +271,7 @@ fun OrcaParamNumberRow(
                     singleLine = true,
                     textStyle = TextStyle(
                         color = if (enabled) OrcaTextPrimary else OrcaUnitText,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Normal
                     ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -287,7 +287,7 @@ fun OrcaParamNumberRow(
                 )
                 Text(
                     text = unitText,
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                     color = OrcaUnitText,
                     maxLines = 1,
                     modifier = Modifier.clickable(enabled = enabled) { expandedTouchAdjuster = !expandedTouchAdjuster }
@@ -303,17 +303,17 @@ fun OrcaParamNumberRow(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 10.dp, bottom = 4.dp)
+                    .padding(start = 6.dp, bottom = 3.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .background(OrcaCardBg)
                     .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                    .padding(horizontal = 5.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(24.dp)
                         .clip(RoundedCornerShape(4.dp))
                         .background(OrcaElevatedBg)
                         .clickable {
@@ -323,7 +323,7 @@ fun OrcaParamNumberRow(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = OrcaTextPrimary, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = OrcaTextPrimary, modifier = Modifier.size(12.dp))
                 }
                 Slider(
                     value = value.coerceIn(sliderMin, sliderMax),
@@ -337,11 +337,11 @@ fun OrcaParamNumberRow(
                         activeTrackColor = OrcaTeal,
                         inactiveTrackColor = OrcaInputBg
                     ),
-                    modifier = Modifier.weight(1f).height(24.dp)
+                    modifier = Modifier.weight(1f).height(20.dp)
                 )
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(24.dp)
                         .clip(RoundedCornerShape(4.dp))
                         .background(OrcaElevatedBg)
                         .clickable {
@@ -351,7 +351,7 @@ fun OrcaParamNumberRow(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Increase", tint = OrcaTextPrimary, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.Add, contentDescription = "Increase", tint = OrcaTextPrimary, modifier = Modifier.size(12.dp))
                 }
             }
         }
@@ -373,34 +373,34 @@ fun OrcaParamIntStepperRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.5.dp),
+            .padding(vertical = 1.5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             color = OrcaTextPrimary,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
-                .weight(0.54f)
-                .padding(start = 10.dp, end = 6.dp)
+                .weight(0.56f)
+                .padding(start = 6.dp, end = 6.dp)
         )
 
         Row(
             modifier = Modifier
-                .weight(0.46f)
-                .height(28.dp)
+                .weight(0.44f)
+                .height(24.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(OrcaInputBg)
                 .border(1.dp, OrcaBorder, RoundedCornerShape(4.dp))
-                .padding(horizontal = 6.dp),
+                .padding(horizontal = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Column(
                     verticalArrangement = Arrangement.Center,
@@ -411,7 +411,7 @@ fun OrcaParamIntStepperRow(
                         contentDescription = "Increment",
                         tint = OrcaTextSecondary,
                         modifier = Modifier
-                            .size(12.dp)
+                            .size(10.dp)
                             .clickable { onValueChange((value + 1).coerceIn(range)) }
                     )
                     Icon(
@@ -419,28 +419,28 @@ fun OrcaParamIntStepperRow(
                         contentDescription = "Decrement",
                         tint = OrcaTextSecondary,
                         modifier = Modifier
-                            .size(12.dp)
+                            .size(10.dp)
                             .clickable { onValueChange((value - 1).coerceIn(range)) }
                     )
                 }
                 Text(
                     text = value.toString(),
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     color = OrcaTextPrimary
                 )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(text = unitText, fontSize = 10.sp, color = OrcaUnitText)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(text = unitText, fontSize = 9.sp, color = OrcaUnitText)
                 Box(
                     modifier = Modifier
-                        .size(20.dp)
+                        .size(18.dp)
                         .clip(RoundedCornerShape(3.dp))
                         .background(OrcaElevatedBg)
                         .clickable { onValueChange((value + 1).coerceIn(range)) },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("+", fontSize = 11.sp, color = OrcaTextPrimary, fontWeight = FontWeight.Bold)
+                    Text("+", fontSize = 10.sp, color = OrcaTextPrimary, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -460,24 +460,24 @@ fun OrcaParamCheckboxRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onCheckedChange(!checked) }
-            .padding(vertical = 4.dp),
+            .padding(vertical = 2.5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             color = OrcaTextPrimary,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
-                .weight(0.54f)
-                .padding(start = 10.dp, end = 6.dp)
+                .weight(0.56f)
+                .padding(start = 6.dp, end = 6.dp)
         )
 
-        Box(modifier = Modifier.weight(0.46f)) {
+        Box(modifier = Modifier.weight(0.44f)) {
             Box(
                 modifier = Modifier
-                    .size(17.dp)
+                    .size(15.dp)
                     .clip(RoundedCornerShape(3.dp))
                     .background(if (checked) OrcaTeal else OrcaInputBg)
                     .border(
@@ -492,7 +492,7 @@ fun OrcaParamCheckboxRow(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(13.dp)
+                        modifier = Modifier.size(11.dp)
                     )
                 }
             }
@@ -515,42 +515,42 @@ fun <T> OrcaParamDropdownRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.5.dp),
+            .padding(vertical = 1.5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = label,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             color = OrcaTextPrimary,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
-                .weight(0.54f)
-                .padding(start = 10.dp, end = 6.dp)
+                .weight(0.56f)
+                .padding(start = 6.dp, end = 6.dp)
         )
 
-        Box(modifier = Modifier.weight(0.46f)) {
+        Box(modifier = Modifier.weight(0.44f)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(28.dp)
+                    .height(24.dp)
                     .clip(RoundedCornerShape(4.dp))
                     .background(OrcaInputBg)
                     .border(1.dp, OrcaBorder, RoundedCornerShape(4.dp))
                     .clickable { expanded = true }
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowDown,
                     contentDescription = null,
                     tint = OrcaTextSecondary,
-                    modifier = Modifier.size(15.dp)
+                    modifier = Modifier.size(13.dp)
                 )
                 Text(
                     text = optionLabel(selected),
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     color = OrcaTextPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -560,7 +560,7 @@ fun <T> OrcaParamDropdownRow(
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { opt ->
                     DropdownMenuItem(
-                        text = { Text(optionLabel(opt), fontSize = 12.sp) },
+                        text = { Text(optionLabel(opt), fontSize = 11.sp) },
                         onClick = {
                             expanded = false
                             onSelect(opt)
