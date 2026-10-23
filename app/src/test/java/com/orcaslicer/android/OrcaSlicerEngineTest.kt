@@ -369,4 +369,61 @@ class OrcaSlicerEngineTest {
         assertEquals("Combing OFF must produce zero combed travel moves", 0, uncombedTravelCount)
         assertTrue("G-code header must record combing_mode", combedSlice.gcodeText.contains("; combing_mode = Not in Skin"))
     }
+
+    @Test
+    fun `complex multi-island high-poly scene with Combing Mode and Support slices rapidly without hanging`() = runTest {
+        val objects = listOf(
+            SceneObject(
+                id = "complex-boat",
+                name = "ComplexBoat",
+                sourceFormat = "STL",
+                mesh = ProceduralMeshes.createCalibrationBoat(),
+                position = com.orcaslicer.android.model.Vec3(-28f, -20f, 0f)
+            ),
+            SceneObject(
+                id = "complex-torus",
+                name = "ComplexTorus",
+                sourceFormat = "STL",
+                mesh = ProceduralMeshes.createTorus(majorRadius = 18f, minorRadius = 6f),
+                position = com.orcaslicer.android.model.Vec3(28f, -20f, 0f)
+            ),
+            SceneObject(
+                id = "complex-sphere",
+                name = "ComplexSphere",
+                sourceFormat = "STL",
+                mesh = ProceduralMeshes.createSphere(15f),
+                position = com.orcaslicer.android.model.Vec3(-25f, 25f, 0f)
+            ),
+            SceneObject(
+                id = "complex-arch",
+                name = "ComplexArch",
+                sourceFormat = "STL",
+                mesh = ProceduralMeshes.createOverhangTestArch(),
+                position = com.orcaslicer.android.model.Vec3(25f, 25f, 0f)
+            )
+        )
+
+        val process = BuiltInPresets.processes.first().copy(
+            enableSupport = true,
+            supportType = com.orcaslicer.android.model.SupportType.TREE_ORGANIC,
+            combingMode = com.orcaslicer.android.model.CombingMode.NOT_IN_SKIN,
+            avoidPrintedPartsWhenTraveling = true,
+            avoidSupportsWhenTraveling = true
+        )
+
+        var lastProgress = 0f
+        val sliceRes = SlicingEngine.sliceScene(
+            objects = objects,
+            printer = BuiltInPresets.printers.first(),
+            filament = BuiltInPresets.filaments.first(),
+            process = process,
+            onProgress = { p, _ -> lastProgress = p }
+        )
+
+        assertTrue("Complex multi-island slicing must succeed", sliceRes.isSuccess)
+        val result = sliceRes.getOrThrow()
+        assertEquals(1.0f, lastProgress, 0.01f)
+        assertTrue("Complex scene must produce layers", result.layers.size > 50)
+        assertTrue("Complex scene must produce valid GPU ribbon vertices", result.gpuRibbonVertices.isNotEmpty())
+    }
 }

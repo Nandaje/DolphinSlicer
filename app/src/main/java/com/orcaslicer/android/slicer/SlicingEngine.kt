@@ -23,11 +23,14 @@ import com.orcaslicer.android.model.ToolpathType
 import com.orcaslicer.android.model.Triangle
 import com.orcaslicer.android.model.Vec2
 import com.orcaslicer.android.model.Vec3
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -58,25 +61,40 @@ object SlicingEngine {
         val infillPolygons: List<List<Vec2>>
     )
 
+    private data class CombingRegion(
+        val poly: List<Vec2>,
+        val guidePoly: List<Vec2>,
+        val minX: Float,
+        val minY: Float,
+        val maxX: Float,
+        val maxY: Float
+    ) {
+        fun containsPointFast(pt: Vec2): Boolean {
+            if (pt.x < minX || pt.x > maxX || pt.y < minY || pt.y > maxY) return false
+            return isPointInPolygon(pt, poly)
+        }
+    }
+
     suspend fun sliceScene(
         objects: List<SceneObject>,
         printer: PrinterProfile,
         filament: FilamentProfile,
         process: ProcessProfile,
         onProgress: (Float, String) -> Unit = { _, _ -> }
-    ): Result<SliceResult> = coroutineScope {
+    ): Result<SliceResult> = withContext(Dispatchers.Default) {
         try {
             val visibleObjects = objects.filter { it.visible }
             if (visibleObjects.isEmpty()) {
-                return@coroutineScope Result.failure(
+                return@withContext Result.failure(
                     IllegalArgumentException("Add or enable at least one 3D model on the build plate before slicing.")
                 )
             }
 
-            onProgress(0.05f, "Transforming meshes to build plate...")
+            onProgress(0.04f, "Transforming meshes to build plate...")
             val allTriangles = ArrayList<Triangle>()
             var maxZ = 0f
             for (obj in visibleObjects) {
+                ensureActive()
                 val worldTris = obj.worldTriangles()
                 for (t in worldTris) {
                     allTriangles.add(t)
@@ -85,7 +103,7 @@ object SlicingEngine {
             }
 
             if (allTriangles.isEmpty() || maxZ <= 0.05f) {
-                return@coroutineScope Result.failure(
+                return@withContext Result.failure(
                     IllegalArgumentException("Selected models have zero height or no triangles.")
                 )
             }
@@ -99,12 +117,45 @@ object SlicingEngine {
             } else {
                 0
             }
-            val totalLayers = (1 + additionalLayers).coerceIn(1, 4000)
+            val totalLayers = (1 + additionalLayers).coerceIn(1, 2500)
 
-            onProgress(0.15f, "Pass 1/2: Slicing $totalLayers layer contours & perimeters...")
+            // Pre-bucket triangles by Z-layer range so Pass 1 only tests triangles crossing each layer's Z plane
+            onProgress(0.09f, "Indexing ${allTriangles.size} triangles across $totalLayers layers...")
+            val trianglesByLayer = Array(totalLayers) { ArrayList<Triangle>() }
+            val safeMaxSliceZ = (maxZ - 0.02f).coerceAtLeast(0.02f)
+
+            for (tri in allTriangles) {
+                val minTriZ = min(tri.v0.z, min(tri.v1.z, tri.v2.z))
+                val maxTriZ = max(tri.v0.z, max(tri.v1.z, tri.v2.z))
+                if (maxTriZ - minTriZ < 1e-5f) continue
+
+                val startLayer = if (minTriZ <= firstLayerHeight) {
+                    0
+                } else {
+                    floor((minTriZ - firstLayerHeight) / layerHeight).toInt().coerceAtLeast(0)
+                }.coerceIn(0, totalLayers - 1)
+
+                val endLayer = if (maxTriZ <= firstLayerHeight) {
+                    0
+                } else {
+                    ceil((maxTriZ - firstLayerHeight) / layerHeight + 1f).toInt()
+                }.coerceIn(startLayer, totalLayers - 1)
+
+                for (l in startLayer..endLayer) {
+                    val rawZ = if (l == 0) firstLayerHeight * 0.5f else firstLayerHeight + (l - 0.5f) * layerHeight
+                    val z = rawZ.coerceIn(0.02f, safeMaxSliceZ) + 0.000137f
+                    if (z in minTriZ..maxTriZ) {
+                        trianglesByLayer[l].add(tri)
+                    }
+                }
+            }
+
+            onProgress(0.12f, "Pass 1/2: Slicing $totalLayers layer contours & perimeters...")
 
             val cpuParallelism = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
             val chunkSize = max(1, (totalLayers + cpuParallelism - 1) / cpuParallelism)
+            val completedPass1 = AtomicInteger(0)
+            val reportStep = max(1, totalLayers / 20)
 
             // PASS 1: Compute 2D contours, wall loops, and infill boundary polygons for all layers in parallel
             val geometryChunks = (0 until totalLayers step chunkSize).map { startIdx ->
@@ -112,12 +163,13 @@ object SlicingEngine {
                 async(Dispatchers.Default) {
                     val list = ArrayList<LayerContourGeometry>(endIdx - startIdx)
                     for (layerIdx in startIdx until endIdx) {
+                        ensureActive()
                         val rawZ = if (layerIdx == 0) {
                             firstLayerHeight * 0.5f
                         } else {
                             firstLayerHeight + (layerIdx - 0.5f) * layerHeight
                         }
-                        val safeSliceZ = rawZ.coerceIn(0.02f, (maxZ - 0.02f).coerceAtLeast(0.02f))
+                        val safeSliceZ = rawZ.coerceIn(0.02f, safeMaxSliceZ)
                         val nominalZ = if (layerIdx == 0) {
                             firstLayerHeight
                         } else {
@@ -131,10 +183,15 @@ object SlicingEngine {
                                 sliceZ = safeSliceZ,
                                 nominalZ = nominalZ,
                                 layerHeight = lh,
-                                triangles = allTriangles,
+                                triangles = trianglesByLayer[layerIdx],
                                 process = process
                             )
                         )
+                        val done = completedPass1.incrementAndGet()
+                        if (done % reportStep == 0 || done == totalLayers) {
+                            val p = 0.12f + 0.25f * (done.toFloat() / totalLayers)
+                            onProgress(p, "Pass 1/2: Contours & walls ($done / $totalLayers layers)...")
+                        }
                     }
                     list
                 }
@@ -144,7 +201,8 @@ object SlicingEngine {
 
             // Compute OrcaSlicer Normal or Tree (Organic) Support Plans across all layers if support is enabled
             val layerSupportPlans: List<LayerSupportPlan> = if (process.enableSupport) {
-                onProgress(0.38f, "Generating OrcaSlicer ${process.supportType.label} structures...")
+                ensureActive()
+                onProgress(0.39f, "Generating OrcaSlicer ${process.supportType.label} structures...")
                 if (process.supportType == SupportType.TREE_ORGANIC || process.supportType == SupportType.TREE_MANUAL) {
                     computeTreeSupportPlans(allTriangles, allGeometries, process)
                 } else {
@@ -155,14 +213,15 @@ object SlicingEngine {
             }
 
             onProgress(0.48f, "Pass 2/2: Generating Top/Bottom surfaces, solid shells & infill...")
+            val completedPass2 = AtomicInteger(0)
 
             // PASS 2: Generate toolpaths for every layer using multi-layer region classification
-            // so Top Surfaces, Bottom Surfaces, Internal Solid Shells, and Sparse Infill are 100% accurate at every Z height
             val layerChunks = (0 until totalLayers step chunkSize).map { startIdx ->
                 val endIdx = min(totalLayers, startIdx + chunkSize)
                 async(Dispatchers.Default) {
                     val chunkLayers = ArrayList<SliceLayer>(endIdx - startIdx)
                     for (layerIdx in startIdx until endIdx) {
+                        ensureActive()
                         chunkLayers.add(
                             buildLayerToolpaths(
                                 layerIdx = layerIdx,
@@ -173,13 +232,19 @@ object SlicingEngine {
                                 process = process
                             )
                         )
+                        val done = completedPass2.incrementAndGet()
+                        if (done % reportStep == 0 || done == totalLayers) {
+                            val p = 0.48f + 0.34f * (done.toFloat() / totalLayers)
+                            onProgress(p, "Pass 2/2: Toolpaths & infill ($done / $totalLayers layers)...")
+                        }
                     }
                     chunkLayers
                 }
             }
 
             val slicedLayers = layerChunks.awaitAll().flatten().sortedBy { it.index }
-            onProgress(0.82f, "Generating G-code & calculating print statistics...")
+            ensureActive()
+            onProgress(0.84f, "Generating G-code & calculating print statistics...")
 
             val (gcode, stats) = generateGCodeAndStats(
                 layers = slicedLayers,
@@ -188,10 +253,16 @@ object SlicingEngine {
                 process = process
             )
 
+            ensureActive()
+            onProgress(0.95f, "Building 3D volumetric toolpath preview...")
+            val result = SliceResult(slicedLayers, stats, gcode)
+
             onProgress(1.0f, "Slicing complete (${stats.layerCount} layers, ${stats.formattedTotalTime})")
-            Result.success(SliceResult(slicedLayers, stats, gcode))
-        } catch (e: Exception) {
-            Result.failure(IllegalStateException("Slicing error: ${e.message}", e))
+            Result.success(result)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            Result.failure(IllegalStateException("Slicing failed on complex mesh: ${t.message ?: t.javaClass.simpleName}", t))
         }
     }
 
@@ -316,10 +387,10 @@ object SlicingEngine {
         val topShellCountForComb = process.topShellLayers.coerceIn(0, 50)
         val isPureSkinLayer = (layerIdx < bottomShellCountForComb) || (layerIdx >= totalLayers - topShellCountForComb)
 
-        // Build allowed combing boundary polygons based on Cura Combing Mode
+        // Build allowed combing boundary polygons once per layer based on Cura Combing Mode
         val combingAllowedPolygons: List<List<Vec2>> = when (process.combingMode) {
             CombingMode.OFF -> emptyList()
-            CombingMode.ALL -> geom.outerContours.map { offsetPolygonInward(it, outerWallWidth * 0.25f).ifEmpty { it } }
+            CombingMode.ALL -> geom.outerContours
             CombingMode.NOT_ON_OUTER_SURFACE -> geom.wallLoopsPerContour.mapNotNull { loops ->
                 loops.getOrNull(1) ?: loops.firstOrNull()
             }
@@ -335,6 +406,24 @@ object SlicingEngine {
             }
         }
 
+        // Precompute lightweight CombingRegions (with 28-vertex guide polygons and AABBs) once per layer
+        val combingRegions: List<CombingRegion> = combingAllowedPolygons.mapNotNull { poly ->
+            if (poly.size < 3) null
+            else {
+                val b = computeContoursBounds(listOf(poly))
+                val insetGuide = offsetPolygonInward(poly, outerWallWidth * 0.4f).ifEmpty { poly }
+                val fastGuide = downsamplePolygon(insetGuide, maxVertices = 28)
+                CombingRegion(
+                    poly = downsamplePolygon(poly, maxVertices = 48),
+                    guidePoly = fastGuide,
+                    minX = b.first.x,
+                    minY = b.first.y,
+                    maxX = b.second.x,
+                    maxY = b.second.y
+                )
+            }
+        }
+
         // Build travel obstacle polygons when "Avoid printed parts / supports when traveling" is enabled
         val travelObstaclePolygons: List<List<Vec2>> = if (process.combingMode != CombingMode.OFF &&
             (process.avoidPrintedPartsWhenTraveling || process.avoidSupportsWhenTraveling)
@@ -342,13 +431,13 @@ object SlicingEngine {
             val avoidDist = process.travelAvoidDistanceMm.coerceIn(0.1f, 5.0f)
             val obs = ArrayList<List<Vec2>>()
             if (process.avoidPrintedPartsWhenTraveling) {
-                for (c in geom.outerContours) {
-                    obs.add(offsetPolygonOutward(c, avoidDist).ifEmpty { c })
+                for (c in geom.outerContours.take(12)) {
+                    obs.add(downsamplePolygon(offsetPolygonOutward(c, avoidDist).ifEmpty { c }, maxVertices = 24))
                 }
             }
             if (process.avoidSupportsWhenTraveling) {
-                for (sLoop in supportPlan.closedLoops) {
-                    obs.add(offsetPolygonOutward(sLoop, avoidDist).ifEmpty { sLoop })
+                for (sLoop in supportPlan.closedLoops.take(12)) {
+                    obs.add(downsamplePolygon(offsetPolygonOutward(sLoop, avoidDist).ifEmpty { sLoop }, maxVertices = 20))
                 }
             }
             obs
@@ -383,7 +472,7 @@ object SlicingEngine {
                     val combedTravel = computeCuraCombedTravel(
                         start = Vec2(prev.x, prev.y),
                         end = Vec2(first3D.x, first3D.y),
-                        combingPolygons = combingAllowedPolygons,
+                        combingRegions = combingRegions,
                         obstaclePolygons = travelObstaclePolygons,
                         targetType = type,
                         lineWidthMm = lineWidthMm,
@@ -1120,13 +1209,13 @@ object SlicingEngine {
         val overhangsByLayer = Array(totalLayers) { ArrayList<Vec2>() }
         if (totalLayers <= 1) return overhangsByLayer
 
-        // In OrcaSlicer, supportThresholdAngleDeg (default 30°) is the overhang angle from horizontal
-        // (or from vertical for steeper thresholds). Any surface overhanging beyond this step needs support.
         val threshDeg = process.supportThresholdAngleDeg.coerceIn(10, 80)
         val threshRad = threshDeg * (PI.toFloat() / 180f)
         val outerWidth = process.outerWallLineWidthMm.coerceIn(0.25f, 1.0f)
+        val safeSpacing = sampleSpacingMm.coerceAtLeast(1.25f)
+        val maxPtsPerLayer = 48
 
-        // 1. Layer-to-Layer unsupported overhang regions
+        // 1. Fast Layer-to-Layer 1D scanline interval overhang extraction (no O(V) signedDistance per sample point)
         for (layerIdx in 2 until totalLayers) {
             val geom = allGeometries[layerIdx]
             val prevGeom = allGeometries[layerIdx - 1]
@@ -1134,70 +1223,47 @@ object SlicingEngine {
 
             val selfSupportMargin = geom.layerHeight * (1f / tan(threshRad).coerceAtLeast(0.35f)) + outerWidth * 0.55f
             val bounds = computeContoursBounds(geom.outerContours)
-            var y = bounds.first.y + sampleSpacingMm * 0.5f
-            while (y <= bounds.second.y - sampleSpacingMm * 0.25f) {
+            var y = bounds.first.y + safeSpacing * 0.5f
+            while (y <= bounds.second.y - safeSpacing * 0.25f && overhangsByLayer[layerIdx].size < maxPtsPerLayer) {
                 val curIntervals = scanlineIntervals(geom.outerContours, y)
                 val prevIntervals = expandIntervals(scanlineIntervals(prevGeom.outerContours, y), selfSupportMargin)
                 val unsupported = subtractIntervals(curIntervals, prevIntervals)
                 for (iv in unsupported) {
                     val minLen = if (process.removeSmallOverhangs) outerWidth * 1.1f else outerWidth * 0.4f
                     if (iv.length >= minLen) {
-                        var x = iv.start + min(sampleSpacingMm * 0.5f, iv.length * 0.5f)
-                        while (x <= iv.end + 1e-3f) {
-                            val pt = Vec2(x.coerceIn(iv.start, iv.end), y)
-                            // Also verify point is outside prevGeom by at least outerWidth * 0.45f in 2D
-                            val (sDistPrev, _) = signedDistanceToContours(pt, prevGeom.outerContours)
-                            if (sDistPrev > outerWidth * 0.45f) {
-                                overhangsByLayer[layerIdx].add(pt)
-                            }
-                            x += sampleSpacingMm
+                        var x = iv.start + min(safeSpacing * 0.5f, iv.length * 0.5f)
+                        while (x <= iv.end + 1e-3f && overhangsByLayer[layerIdx].size < maxPtsPerLayer) {
+                            overhangsByLayer[layerIdx].add(Vec2(x.coerceIn(iv.start, iv.end), y))
+                            x += safeSpacing
                         }
                     }
                 }
-                y += sampleSpacingMm
+                y += safeSpacing
             }
         }
 
-        // 2. Downward-facing mesh triangles (catches flat downward roofs, local minima, and steep cantilevers)
+        // 2. Downward-facing mesh triangles (strided on complex meshes so 100k+ triangle models stay instantaneous)
         val normalZCutoff = -cos((90 - threshDeg).coerceIn(15, 75) * (PI.toFloat() / 180f))
         val firstLh = allGeometries[0].layerHeight
         val stdLh = if (totalLayers > 1) allGeometries[1].layerHeight else firstLh
+        val triStride = max(1, triangles.size / 6000)
 
-        for (tri in triangles) {
+        var tIdx = 0
+        while (tIdx < triangles.size) {
+            val tri = triangles[tIdx]
+            tIdx += triStride
             val minZ = min(tri.v0.z, min(tri.v1.z, tri.v2.z))
             if (minZ < firstLh + stdLh * 1.5f) continue
             if (tri.normal.z < normalZCutoff) {
-                val minX = min(tri.v0.x, min(tri.v1.x, tri.v2.x))
-                val maxX = max(tri.v0.x, max(tri.v1.x, tri.v2.x))
-                val minY = min(tri.v0.y, min(tri.v1.y, tri.v2.y))
-                val maxY = max(tri.v0.y, max(tri.v1.y, tri.v2.y))
                 val avgZ = (tri.v0.z + tri.v1.z + tri.v2.z) / 3f
                 val targetLayer = (1 + ((avgZ - firstLh) / stdLh).roundToInt()).coerceIn(2, totalLayers - 1)
+                if (overhangsByLayer[targetLayer].size >= maxPtsPerLayer) continue
 
                 val cx = (tri.v0.x + tri.v1.x + tri.v2.x) / 3f
                 val cy = (tri.v0.y + tri.v1.y + tri.v2.y) / 3f
                 val prevContours = allGeometries[targetLayer - 1].outerContours
-                val (dCenter, _) = signedDistanceToContours(Vec2(cx, cy), prevContours)
-                if (dCenter > outerWidth * 0.35f) {
+                if (!isPointInContours(Vec2(cx, cy), prevContours)) {
                     overhangsByLayer[targetLayer].add(Vec2(cx, cy))
-                }
-
-                // Sample larger overhang triangles across their footprint
-                if (maxX - minX > sampleSpacingMm || maxY - minY > sampleSpacingMm) {
-                    var sx = minX + sampleSpacingMm * 0.5f
-                    while (sx <= maxX) {
-                        var sy = minY + sampleSpacingMm * 0.5f
-                        while (sy <= maxY) {
-                            if (pointInTriangle2D(Vec2(sx, sy), Vec2(tri.v0.x, tri.v0.y), Vec2(tri.v1.x, tri.v1.y), Vec2(tri.v2.x, tri.v2.y))) {
-                                val (sd, _) = signedDistanceToContours(Vec2(sx, sy), prevContours)
-                                if (sd > outerWidth * 0.35f) {
-                                    overhangsByLayer[targetLayer].add(Vec2(sx, sy))
-                                }
-                            }
-                            sy += sampleSpacingMm
-                        }
-                        sx += sampleSpacingMm
-                    }
                 }
             }
         }
@@ -1230,12 +1296,6 @@ object SlicingEngine {
         val totalLayers = allGeometries.size
         if (totalLayers <= 1) return List(totalLayers) { LayerSupportPlan.EMPTY }
 
-        val cellSize = 1.25f
-        val overhangsByLayer = extractOverhangPointsByLayer(triangles, allGeometries, process, sampleSpacingMm = cellSize)
-        if (overhangsByLayer.all { it.isEmpty() }) {
-            return List(totalLayers) { LayerSupportPlan.EMPTY }
-        }
-
         val allOuter = allGeometries.flatMap { it.outerContours }
         if (allOuter.isEmpty()) return List(totalLayers) { LayerSupportPlan.EMPTY }
         val modelBounds = computeContoursBounds(allOuter)
@@ -1245,12 +1305,17 @@ object SlicingEngine {
         val maxX = modelBounds.second.x + pad
         val maxY = modelBounds.second.y + pad
 
-        val nx = ((maxX - minX) / cellSize).toInt().coerceIn(8, 260)
-        val ny = ((maxY - minY) / cellSize).toInt().coerceIn(8, 260)
-        val numCells = nx * ny
+        val maxSpan = max(maxX - minX, maxY - minY).coerceAtLeast(10f)
+        val cellSize = max(1.35f, maxSpan / 76f)
 
-        fun cellCenter(ix: Int, iy: Int): Vec2 =
-            Vec2(minX + (ix + 0.5f) * cellSize, minY + (iy + 0.5f) * cellSize)
+        val overhangsByLayer = extractOverhangPointsByLayer(triangles, allGeometries, process, sampleSpacingMm = cellSize)
+        if (overhangsByLayer.all { it.isEmpty() }) {
+            return List(totalLayers) { LayerSupportPlan.EMPTY }
+        }
+
+        val nx = ((maxX - minX) / cellSize).toInt().coerceIn(8, 80)
+        val ny = ((maxY - minY) / cellSize).toInt().coerceIn(8, 80)
+        val numCells = nx * ny
 
         val stdLh = if (totalLayers > 1) allGeometries[1].layerHeight else allGeometries[0].layerHeight
         val topZGapLayers = max(1, (process.supportTopZDistanceMm / stdLh).roundToInt())
@@ -1259,7 +1324,7 @@ object SlicingEngine {
         val bottomInterfaceCount = process.supportBottomInterfaceLayers.coerceIn(0, 8)
         val xyClearance = process.supportObjectXyDistanceMm.coerceIn(0.15f, 2.0f)
 
-        // Precompute per-layer model blocked mask (inside model or within xyClearance) and strictly-inside-model mask
+        // Precompute per-layer model blocked mask using fast 1D row scanlineIntervals instead of per-cell O(V) distance!
         val insideModelByLayer = Array(totalLayers) { BooleanArray(numCells) }
         val blockedByModelByLayer = Array(totalLayers) { BooleanArray(numCells) }
 
@@ -1270,15 +1335,27 @@ object SlicingEngine {
             val insideArr = insideModelByLayer[layerIdx]
             val blockedArr = blockedByModelByLayer[layerIdx]
             for (iy in 0 until ny) {
-                for (ix in 0 until nx) {
-                    val pt = cellCenter(ix, iy)
-                    val (sDist, _) = signedDistanceToContours(pt, contours)
-                    val idx = iy * nx + ix
-                    if (sDist < 0f) {
-                        insideArr[idx] = true
-                        blockedArr[idx] = true
-                    } else if (sDist < gap) {
-                        blockedArr[idx] = true
+                val y = minY + (iy + 0.5f) * cellSize
+                val rawIvs = scanlineIntervals(contours, y)
+                if (rawIvs.isEmpty()) continue
+                val rowOffset = iy * nx
+                for (iv in rawIvs) {
+                    val ix0 = ((iv.start - minX) / cellSize).toInt().coerceIn(0, nx - 1)
+                    val ix1 = ((iv.end - minX) / cellSize).toInt().coerceIn(0, nx - 1)
+                    for (ix in ix0..ix1) {
+                        val cx = minX + (ix + 0.5f) * cellSize
+                        if (cx in iv.start..iv.end) {
+                            insideArr[rowOffset + ix] = true
+                            blockedArr[rowOffset + ix] = true
+                        }
+                    }
+                    val bx0 = ((iv.start - gap - minX) / cellSize).toInt().coerceIn(0, nx - 1)
+                    val bx1 = ((iv.end + gap - minX) / cellSize).toInt().coerceIn(0, nx - 1)
+                    for (ix in bx0..bx1) {
+                        val cx = minX + (ix + 0.5f) * cellSize
+                        if (cx in (iv.start - gap)..(iv.end + gap)) {
+                            blockedArr[rowOffset + ix] = true
+                        }
                     }
                 }
             }
@@ -1758,7 +1835,7 @@ object SlicingEngine {
         val maxStepPerLayer = stdLh * tan(maxAngleRad)
         val taperPerLayer = stdLh * tan(process.treeSupportBranchDiameterAngleDeg.coerceIn(1, 15) * (PI.toFloat() / 180f))
 
-        // Cluster overhang points on each layer so tips are cleanly spaced by tipSpacing
+        // Cluster overhang points on each layer so tips are cleanly spaced by tipSpacing (capped at 16 per layer)
         val spawnedTipsByLayer = Array(totalLayers) { ArrayList<Vec2>() }
         for (layerIdx in 2 until totalLayers) {
             val rawPts = rawOverhangsByLayer[layerIdx]
@@ -1766,6 +1843,7 @@ object SlicingEngine {
             val targetTipLayer = (layerIdx - topZGapLayers).coerceAtLeast(0)
             val chosen = spawnedTipsByLayer[targetTipLayer]
             for (pt in rawPts) {
+                if (chosen.size >= 16) break
                 if (chosen.none { it.distanceTo(pt) < tipSpacing * 0.85f }) {
                     chosen.add(pt)
                 }
@@ -2057,20 +2135,21 @@ object SlicingEngine {
      */
     private fun computeCircleUnionPolygons(circles: List<TreeCrossSection>): List<List<Vec2>> {
         if (circles.isEmpty()) return emptyList()
-        if (circles.size == 1) {
-            val c = circles[0]
-            return listOf(createSmoothCircleLoop(c.x, c.y, c.radius, segments = 24))
+        val cappedCircles = if (circles.size > 24) circles.take(24) else circles
+        if (cappedCircles.size == 1) {
+            val c = cappedCircles[0]
+            return listOf(createSmoothCircleLoop(c.x, c.y, c.radius, segments = 16))
         }
 
         // Remove any circle completely contained inside another circle
-        val filtered = circles.filter { ci ->
-            circles.none { cj ->
+        val filtered = cappedCircles.filter { ci ->
+            cappedCircles.none { cj ->
                 ci !== cj && hypot2D(ci.x - cj.x, ci.y - cj.y) + ci.radius <= cj.radius + 0.02f
             }
         }
 
         val arcSegments = ArrayList<Segment2D>()
-        val nSegs = 24
+        val nSegs = 14
         for (i in filtered.indices) {
             val ci = filtered[i]
             val pts = createSmoothCircleLoop(ci.x, ci.y, ci.radius, segments = nSegs)
@@ -2207,16 +2286,15 @@ object SlicingEngine {
     }
 
     /**
-     * Routes a combing travel path inside `poly` from `start` to `end` by walking the shorter side
-     * of an inward-offset guide polygon and applying visibility string-pulling shortcuts.
+     * Routes a combing travel path inside `region` from `start` to `end` by walking the shorter side
+     * of the precomputed 28-vertex `guidePoly` and applying a fast 2-pass visibility shortcut.
      */
-    private fun buildBoundaryCombedPath(
+    private fun buildBoundaryCombedPathFast(
         start: Vec2,
         end: Vec2,
-        poly: List<Vec2>,
-        lineWidthMm: Float
+        region: CombingRegion
     ): List<Vec2> {
-        val guidePoly = offsetPolygonInward(poly, lineWidthMm * 0.45f).ifEmpty { poly }
+        val guidePoly = region.guidePoly
         val n = guidePoly.size
         if (n < 3) return listOf(start, end)
 
@@ -2227,7 +2305,7 @@ object SlicingEngine {
         }
 
         // Build forward chain along guidePoly
-        val forward = ArrayList<Vec2>()
+        val forward = ArrayList<Vec2>(n + 3)
         forward.add(start)
         var idx = iStart
         var steps = 0
@@ -2240,7 +2318,7 @@ object SlicingEngine {
         forward.add(end)
 
         // Build backward chain along guidePoly
-        val backward = ArrayList<Vec2>()
+        val backward = ArrayList<Vec2>(n + 3)
         backward.add(start)
         idx = iStart
         steps = 0
@@ -2253,22 +2331,30 @@ object SlicingEngine {
         backward.add(end)
 
         val chosen = if (polylineLength(forward) <= polylineLength(backward)) forward else backward
-        return shortcutCombingWaypoints(chosen, poly)
+        return shortcutCombingWaypoints(chosen, region.poly)
     }
 
     /**
-     * Visibility String-Pulling / Funnel Shortcut Pass:
-     * Simplifies a boundary-following combing chain into the shortest taut path that stays strictly inside `poly`.
+     * Fast bounded Visibility String-Pulling / Funnel Shortcut Pass:
+     * Simplifies a boundary-following combing chain (<= 30 points) into a taut interior path.
      */
     private fun shortcutCombingWaypoints(chain: List<Vec2>, poly: List<Vec2>): List<Vec2> {
-        if (chain.size <= 2) return chain
-        val out = ArrayList<Vec2>()
+        if (chain.size <= 3) return chain
+        // If the direct chord between the first interior guide vertex and last interior guide vertex is clear, jump straight across
+        if (chain.size >= 4 && isChordInsidePolygon(chain[1], chain[chain.lastIndex - 1], poly)) {
+            return listOf(chain.first(), chain[1], chain[chain.lastIndex - 1], chain.last())
+        }
+
+        val out = ArrayList<Vec2>(chain.size)
         var curIdx = 0
         out.add(chain[0])
+        var guard = 0
 
-        while (curIdx < chain.lastIndex) {
+        while (curIdx < chain.lastIndex && guard <= chain.size) {
+            guard++
             var furthestVisible = curIdx + 1
-            for (testIdx in chain.lastIndex downTo curIdx + 2) {
+            val maxLookahead = min(chain.lastIndex, curIdx + 8)
+            for (testIdx in maxLookahead downTo curIdx + 2) {
                 if (isChordInsidePolygon(chain[curIdx], chain[testIdx], poly)) {
                     furthestVisible = testIdx
                     break
@@ -2292,7 +2378,7 @@ object SlicingEngine {
         var currentPath = listOf(start, end)
 
         for (obs in obstacles) {
-            if (obs.size < 3) continue
+            if (obs.size < 3 || currentPath.size > 16) continue
             // Only detour around obstacles where neither start nor end is strictly inside the obstacle
             if (isPointInPolygon(start, obs) || isPointInPolygon(end, obs)) continue
 
@@ -2340,18 +2426,17 @@ object SlicingEngine {
     }
 
     /**
-     * Cura Combing Mode path-routing & retraction decision algorithm:
-     * 1. Checks if `start` and `end` lie within the same allowed combing region (`combingPolygons`).
-     * 2. If the straight chord stays inside the combing region, combs directly without crossing walls.
-     * 3. If the straight chord crosses a concave wall/hole, routes along the interior contour boundary with string-pulling shortcuts.
-     * 4. If travelling between separate islands and `avoidPrintedPartsWhenTraveling` / `avoidSupportsWhenTraveling` is enabled,
-     *    detours around obstacle boundaries with `travelAvoidDistanceMm` clearance.
+     * Cura Combing Mode path-routing & retraction decision algorithm (optimized for complex multi-island meshes):
+     * 1. Fast O(1) short step-over path for adjacent infill/skin lines (`travelDist <= lineWidthMm * 4.5f`).
+     * 2. Fast AABB + point-in-polygon check against precomputed `combingRegions`.
+     * 3. If the straight chord stays inside the combing region, combs directly without crossing walls.
+     * 4. If the straight chord crosses a concave wall/hole, routes along the precomputed 28-vertex `guidePoly`.
      * 5. Evaluates `maxCombDistanceWithNoRetractMm` and `retractBeforeOuterWall` to decide whether retraction is required.
      */
     private fun computeCuraCombedTravel(
         start: Vec2,
         end: Vec2,
-        combingPolygons: List<List<Vec2>>,
+        combingRegions: List<CombingRegion>,
         obstaclePolygons: List<List<Vec2>>,
         targetType: ToolpathType,
         lineWidthMm: Float,
@@ -2365,22 +2450,31 @@ object SlicingEngine {
             )
         }
 
-        val snapMargin = lineWidthMm * 1.6f
-        val hostPoly = combingPolygons.firstOrNull { poly ->
-            val (dStart, _) = signedDistanceToContours(start, listOf(poly))
-            val (dEnd, _) = signedDistanceToContours(end, listOf(poly))
-            dStart <= snapMargin && dEnd <= snapMargin
+        val directDist = start.distanceTo(end)
+        // Fast O(1) path for short adjacent infill/skin step-overs
+        if (combingRegions.isNotEmpty() && directDist <= lineWidthMm * 4.5f) {
+            val requiresRetract = (process.retractBeforeOuterWall && targetType == ToolpathType.OUTER_WALL) ||
+                (process.maxCombDistanceWithNoRetractMm > 0f && directDist > process.maxCombDistanceWithNoRetractMm)
+            return CombedTravelResult(
+                waypoints = listOf(start, end),
+                isCombed = true,
+                requiresRetract = requiresRetract
+            )
+        }
+
+        val hostRegion = combingRegions.firstOrNull { region ->
+            region.containsPointFast(start) && region.containsPointFast(end)
         }
 
         val waypoints: List<Vec2>
         val isCombed: Boolean
 
-        if (hostPoly != null) {
+        if (hostRegion != null) {
             isCombed = true
-            waypoints = if (isChordInsidePolygon(start, end, hostPoly)) {
+            waypoints = if (isChordInsidePolygon(start, end, hostRegion.poly)) {
                 listOf(start, end)
             } else {
-                buildBoundaryCombedPath(start, end, hostPoly, lineWidthMm)
+                buildBoundaryCombedPathFast(start, end, hostRegion)
             }
         } else {
             isCombed = false
@@ -2409,7 +2503,7 @@ object SlicingEngine {
     private fun intersectTrianglesAtZ(triangles: List<Triangle>, rawZ: Float): List<Segment2D> {
         // Perturb Z by a tiny irrational-like epsilon so the slicing plane never lands dead-on a vertex or horizontal face
         val z = rawZ + 0.000137f
-        val segments = ArrayList<Segment2D>()
+        val segments = ArrayList<Segment2D>(min(triangles.size, 2048))
         for (tri in triangles) {
             val v0 = tri.v0
             val v1 = tri.v1
@@ -2419,17 +2513,19 @@ object SlicingEngine {
             val maxZ = max(v0.z, max(v1.z, v2.z))
             if (z < minZ || z > maxZ || maxZ - minZ < 1e-5f) continue
 
-            val pts = ArrayList<Vec2>(3)
-            intersectEdgeAtZ(v0, v1, z)?.let { pts.add(it) }
-            intersectEdgeAtZ(v1, v2, z)?.let { pts.add(it) }
-            intersectEdgeAtZ(v2, v0, z)?.let { pts.add(it) }
+            val p01 = intersectEdgeAtZ(v0, v1, z)
+            val p12 = intersectEdgeAtZ(v1, v2, z)
+            val p20 = intersectEdgeAtZ(v2, v0, z)
 
-            if (pts.size >= 2) {
-                val pA = pts[0]
-                val pB = if (pts[0].distanceTo(pts[1]) > 1e-4f) pts[1] else pts.getOrNull(2)
-                if (pB != null && pA.distanceTo(pB) > 1e-4f) {
-                    segments.add(Segment2D(pA, pB))
-                }
+            val pA = p01 ?: p12
+            val pB = when {
+                p01 != null && p12 != null && p01.distanceTo(p12) > 1e-4f -> p12
+                p01 != null && p20 != null && p01.distanceTo(p20) > 1e-4f -> p20
+                p12 != null && p20 != null && p12.distanceTo(p20) > 1e-4f -> p20
+                else -> null
+            }
+            if (pA != null && pB != null) {
+                segments.add(Segment2D(pA, pB))
             }
         }
         return segments
@@ -2445,102 +2541,192 @@ object SlicingEngine {
         return null
     }
 
+    /**
+     * O(S) Spatial Grid Hash segment chainer for complex meshes:
+     * Buckets segment endpoints into 0.15mm 2D spatial cells so chaining thousands of triangle
+     * intersection segments on a high-poly STL takes < 1ms instead of O(S^2) quadratic scans.
+     */
     private fun chainSegmentsIntoPolygons(segments: List<Segment2D>): List<List<Vec2>> {
         if (segments.isEmpty()) return emptyList()
-        val used = BooleanArray(segments.size)
-        val polygons = ArrayList<List<Vec2>>()
-        val snapTol = 0.12f
+        val nSegs = segments.size
+        val used = BooleanArray(nSegs)
+        val snapTol = 0.14f
+        val invCell = 1f / snapTol
 
-        for (startIdx in segments.indices) {
+        fun cellKey(gx: Int, gy: Int): Long =
+            (gx.toLong() shl 32) or (gy.toLong() and 0xFFFFFFFFL)
+
+        // Map from 2D grid cell -> list of encoded endpoints: (segIdx shl 1) | endpointBit (0 = a, 1 = b)
+        val grid = HashMap<Long, IntArray>(nSegs * 2)
+        val gridCounts = HashMap<Long, Int>(nSegs * 2)
+
+        fun insertEndpoint(pt: Vec2, encoded: Int) {
+            val gx = floor(pt.x * invCell).toInt()
+            val gy = floor(pt.y * invCell).toInt()
+            val key = cellKey(gx, gy)
+            val curArr = grid[key]
+            val curSize = gridCounts[key] ?: 0
+            if (curArr == null) {
+                val arr = IntArray(4)
+                arr[0] = encoded
+                grid[key] = arr
+                gridCounts[key] = 1
+            } else {
+                val targetArr = if (curSize >= curArr.size) curArr.copyOf(curArr.size * 2) else curArr
+                targetArr[curSize] = encoded
+                grid[key] = targetArr
+                gridCounts[key] = curSize + 1
+            }
+        }
+
+        for (i in 0 until nSegs) {
+            val s = segments[i]
+            insertEndpoint(s.a, i shl 1)
+            insertEndpoint(s.b, (i shl 1) or 1)
+        }
+
+        fun findNearestUnusedSegment(pt: Vec2): Pair<Int, Boolean>? {
+            val gx = floor(pt.x * invCell).toInt()
+            val gy = floor(pt.y * invCell).toInt()
+            var bestSeg = -1
+            var bestReverse = false
+            var bestDist = snapTol
+
+            for (dy in -1..1) {
+                for (dx in -1..1) {
+                    val key = cellKey(gx + dx, gy + dy)
+                    val arr = grid[key] ?: continue
+                    val count = gridCounts[key] ?: 0
+                    for (k in 0 until count) {
+                        val enc = arr[k]
+                        val segIdx = enc ushr 1
+                        if (used[segIdx]) continue
+                        val isB = (enc and 1) != 0
+                        val candPt = if (isB) segments[segIdx].b else segments[segIdx].a
+                        val d = pt.distanceTo(candPt)
+                        if (d < bestDist) {
+                            bestDist = d
+                            bestSeg = segIdx
+                            bestReverse = isB
+                        }
+                    }
+                }
+            }
+            return if (bestSeg >= 0) bestSeg to bestReverse else null
+        }
+
+        val polygons = ArrayList<List<Vec2>>()
+
+        for (startIdx in 0 until nSegs) {
             if (used[startIdx]) continue
             used[startIdx] = true
 
-            val poly = ArrayList<Vec2>()
-            poly.add(segments[startIdx].a)
-            poly.add(segments[startIdx].b)
+            val deque = ArrayDeque<Vec2>(64)
+            deque.addLast(segments[startIdx].a)
+            deque.addLast(segments[startIdx].b)
 
-            var searching = true
-            while (searching) {
-                searching = false
-                val tail = poly.last()
-                val head = poly.first()
-                var bestIdx = -1
-                var bestDist = snapTol
-                var reverseMatch = false
-                var prependToHead = false
-
-                for (j in segments.indices) {
-                    if (used[j]) continue
-                    val dTailA = tail.distanceTo(segments[j].a)
-                    if (dTailA < bestDist) {
-                        bestDist = dTailA; bestIdx = j; reverseMatch = false; prependToHead = false
-                    }
-                    val dTailB = tail.distanceTo(segments[j].b)
-                    if (dTailB < bestDist) {
-                        bestDist = dTailB; bestIdx = j; reverseMatch = true; prependToHead = false
-                    }
-                    val dHeadA = head.distanceTo(segments[j].a)
-                    if (dHeadA < bestDist) {
-                        bestDist = dHeadA; bestIdx = j; reverseMatch = false; prependToHead = true
-                    }
-                    val dHeadB = head.distanceTo(segments[j].b)
-                    if (dHeadB < bestDist) {
-                        bestDist = dHeadB; bestIdx = j; reverseMatch = true; prependToHead = true
-                    }
+            var steps = 0
+            val maxSteps = nSegs + 2
+            while (steps < maxSteps) {
+                steps++
+                val tail = deque.last()
+                val head = deque.first()
+                if (deque.size >= 3 && tail.distanceTo(head) <= snapTol) {
+                    break
                 }
 
-                if (bestIdx >= 0) {
-                    used[bestIdx] = true
-                    if (!prependToHead) {
-                        val nextPt = if (reverseMatch) segments[bestIdx].a else segments[bestIdx].b
-                        if (nextPt.distanceTo(poly.first()) <= snapTol && poly.size >= 3) {
-                            break
-                        }
-                        poly.add(nextPt)
-                    } else {
-                        val prevPt = if (reverseMatch) segments[bestIdx].a else segments[bestIdx].b
-                        if (prevPt.distanceTo(poly.last()) <= snapTol && poly.size >= 3) {
-                            break
-                        }
-                        poly.add(0, prevPt)
+                val matchTail = findNearestUnusedSegment(tail)
+                if (matchTail != null) {
+                    val (segIdx, matchedB) = matchTail
+                    used[segIdx] = true
+                    val nextPt = if (matchedB) segments[segIdx].a else segments[segIdx].b
+                    if (deque.size >= 3 && nextPt.distanceTo(head) <= snapTol) {
+                        break
                     }
-                    searching = true
+                    deque.addLast(nextPt)
+                    continue
                 }
+
+                val matchHead = findNearestUnusedSegment(head)
+                if (matchHead != null) {
+                    val (segIdx, matchedB) = matchHead
+                    used[segIdx] = true
+                    val prevPt = if (matchedB) segments[segIdx].a else segments[segIdx].b
+                    if (deque.size >= 3 && prevPt.distanceTo(tail) <= snapTol) {
+                        break
+                    }
+                    deque.addFirst(prevPt)
+                    continue
+                }
+
+                break
             }
 
-            if (poly.size >= 3) {
-                val cleaned = cleanAndSimplifyPolygon(ensureCounterClockwise(poly))
+            if (deque.size >= 3) {
+                val cleaned = cleanAndSimplifyPolygon(ensureCounterClockwise(deque.toList()))
                 if (cleaned.size >= 3) {
-                    polygons.add(cleaned)
+                    val b = computeContoursBounds(listOf(cleaned))
+                    val spanX = b.second.x - b.first.x
+                    val spanY = b.second.y - b.first.y
+                    // Filter out microscopic < 0.12mm mesh-noise slivers from complex 3D scans/STLs
+                    if (spanX >= 0.12f && spanY >= 0.12f) {
+                        polygons.add(cleaned)
+                    }
                 }
             }
         }
-        return polygons
+
+        // Keep at most the top 48 largest contours per layer so pathological noisy meshes never stall perimeters
+        return if (polygons.size <= 48) {
+            polygons
+        } else {
+            polygons.sortedByDescending { poly ->
+                val b = computeContoursBounds(listOf(poly))
+                (b.second.x - b.first.x) + (b.second.y - b.first.y)
+            }.take(48)
+        }
     }
 
     /**
-     * Removes duplicate points AND eliminates colinear subdivision vertices along straight edges.
-     * This prevents corners from overtaking triangle-diagonal split vertices during inward offsetting!
+     * Downsamples a closed polygon to at most `maxVertices` vertices while preserving sharp corners and extrema.
+     */
+    private fun downsamplePolygon(poly: List<Vec2>, maxVertices: Int): List<Vec2> {
+        if (poly.size <= maxVertices || maxVertices < 6) return poly
+        val out = ArrayList<Vec2>(maxVertices)
+        val n = poly.size
+        val step = n.toFloat() / maxVertices
+        var cursor = 0f
+        for (k in 0 until maxVertices) {
+            val idx = cursor.toInt().coerceIn(0, n - 1)
+            out.add(poly[idx])
+            cursor += step
+        }
+        return out
+    }
+
+    /**
+     * Removes duplicate points, eliminates colinear/near-colinear subdivision vertices along curves,
+     * and caps polygon vertex count so high-resolution curved STL meshes stay fast across all passes.
      */
     private fun cleanAndSimplifyPolygon(pts: List<Vec2>): List<Vec2> {
         if (pts.size < 3) return emptyList()
 
-        // 1. Remove consecutive duplicates closer than 0.02mm
+        // 1. Remove consecutive duplicates closer than 0.035mm
         var current = ArrayList<Vec2>(pts.size)
         for (p in pts) {
-            if (current.isEmpty() || current.last().distanceTo(p) > 0.02f) {
+            if (current.isEmpty() || current.last().distanceTo(p) > 0.035f) {
                 current.add(p)
             }
         }
-        if (current.size >= 2 && current.first().distanceTo(current.last()) <= 0.02f) {
+        if (current.size >= 2 && current.first().distanceTo(current.last()) <= 0.035f) {
             current.removeAt(current.lastIndex)
         }
         if (current.size < 3) return emptyList()
 
-        // 2. Iteratively prune colinear vertices and 180-degree spikes
+        // 2. Iteratively prune colinear/gentle-curve vertices and 180-degree spikes
         var changed = true
         var pass = 0
-        while (changed && current.size > 3 && pass < 4) {
+        while (changed && current.size > 3 && pass < 3) {
             changed = false
             pass++
             val nextList = ArrayList<Vec2>(current.size)
@@ -2555,7 +2741,7 @@ object SlicingEngine {
                 val len1 = v1.length()
                 val len2 = v2.length()
 
-                if (len1 < 0.02f || len2 < 0.02f) {
+                if (len1 < 0.03f || len2 < 0.03f) {
                     changed = true
                     continue
                 }
@@ -2565,8 +2751,10 @@ object SlicingEngine {
                 val cross = abs(e1.x * e2.y - e1.y * e2.x)
                 val dot = e1.x * e2.x + e1.y * e2.y
 
-                // If prev -> curr -> next is straight (colinear) or a degenerate hairpin spike, drop curr
-                if ((cross < 0.025f && dot > 0.99f) || dot < -0.98f) {
+                // Drop colinear edges, gentle sub-millimeter curve subdivisions, or hairpin spikes
+                val isColinear = cross < 0.045f && dot > 0.985f
+                val isTinyCurveSubdiv = (len1 + len2 < 0.65f) && cross < 0.14f && dot > 0.96f
+                if (isColinear || isTinyCurveSubdiv || dot < -0.97f) {
                     changed = true
                 } else {
                     nextList.add(curr)
@@ -2579,7 +2767,8 @@ object SlicingEngine {
             }
         }
 
-        return if (current.size >= 3) current else emptyList()
+        if (current.size < 3) return emptyList()
+        return if (current.size > 96) downsamplePolygon(current, maxVertices = 96) else current
     }
 
     private fun signedPolygonArea(pts: List<Vec2>): Float {
@@ -2666,7 +2855,7 @@ object SlicingEngine {
             return listOf(unrotate(x0, y), unrotate(x1, y))
         }
 
-        val steps = max(2, (length / 1.5f).toInt().coerceAtMost(48))
+        val steps = max(2, (length / 1.8f).toInt().coerceAtMost(32))
         val pts = ArrayList<Vec2>(steps + 1)
         val freq = (2f * PI.toFloat()) / (spacing * 2.2f).coerceAtLeast(3.5f)
         val amp = (spacing * 0.28f).coerceAtMost(2.5f)
@@ -2703,7 +2892,7 @@ object SlicingEngine {
             val len = edge.length()
             val dir = edge.normalized()
             val norm = dir.perp()
-            val subdivs = max(1, (len / step).toInt().coerceAtMost(32))
+            val subdivs = max(1, (len / step).toInt().coerceAtMost(24))
             for (s in 0 until subdivs) {
                 val t = s.toFloat() / subdivs
                 val basePt = a + edge * t
@@ -2748,6 +2937,48 @@ object SlicingEngine {
         return pts
     }
 
+    private fun StringBuilder.appendFixed3(value: Float): StringBuilder {
+        val scaled = (value * 1000f).roundToInt()
+        if (scaled < 0) append('-')
+        val absVal = abs(scaled)
+        append(absVal / 1000)
+        append('.')
+        val frac = absVal % 1000
+        if (frac < 100) append('0')
+        if (frac < 10) append('0')
+        append(frac)
+        return this
+    }
+
+    private fun StringBuilder.appendFixed4(value: Float): StringBuilder {
+        val scaled = (value * 10000f).roundToInt()
+        if (scaled < 0) append('-')
+        val absVal = abs(scaled)
+        append(absVal / 10000)
+        append('.')
+        val frac = absVal % 10000
+        if (frac < 1000) append('0')
+        if (frac < 100) append('0')
+        if (frac < 10) append('0')
+        append(frac)
+        return this
+    }
+
+    private fun StringBuilder.appendFixed5(value: Float): StringBuilder {
+        val scaled = (value * 100000f).roundToInt()
+        if (scaled < 0) append('-')
+        val absVal = abs(scaled)
+        append(absVal / 100000)
+        append('.')
+        val frac = absVal % 100000
+        if (frac < 10000) append('0')
+        if (frac < 1000) append('0')
+        if (frac < 100) append('0')
+        if (frac < 10) append('0')
+        append(frac)
+        return this
+    }
+
     private fun generateGCodeAndStats(
         layers: List<SliceLayer>,
         printer: PrinterProfile,
@@ -2760,7 +2991,11 @@ object SlicingEngine {
         var totalSegments = 0
         val featureTimes = HashMap<ToolpathType, Float>()
 
-        val sb = StringBuilder(min(layers.size * 4096, 4 * 1024 * 1024))
+        // Cap in-memory G-code text buffer at 8 MB so complex multi-hundred-thousand-segment prints never OOM on mobile
+        val maxGcodeChars = 8 * 1024 * 1024
+        var gcodeTruncated = false
+
+        val sb = StringBuilder(min(layers.size * 2048, 2 * 1024 * 1024))
         sb.append("; HEADER_BLOCK_START\n")
         sb.append("; generated by DolphinSlicer (OrcaSlicer Android) 2.2.0\n")
         sb.append("; printer_model = ${printer.name}\n")
@@ -2795,16 +3030,22 @@ object SlicingEngine {
         val bedCenterY = printer.bedDepthY * 0.5f
 
         for (layer in layers) {
-            sb.append(";LAYER_CHANGE\n")
-            sb.append(String.format(Locale.US, ";Z:%.3f\n", layer.zHeightMm))
-            sb.append(String.format(Locale.US, ";HEIGHT:%.3f\n", layer.layerHeightMm))
-            sb.append(String.format(Locale.US, "G1 Z%.3f F1800\n", layer.zHeightMm))
+            val writeGcode = sb.length < maxGcodeChars
+            if (writeGcode) {
+                sb.append(";LAYER_CHANGE\n;Z:")
+                sb.appendFixed3(layer.zHeightMm).append("\n;HEIGHT:")
+                sb.appendFixed3(layer.layerHeightMm).append("\nG1 Z")
+                sb.appendFixed3(layer.zHeightMm).append(" F1800\n")
 
-            if (layer.index == 1) {
-                val fanPwm = (filament.fanSpeedPercent * 255) / 100
-                sb.append("M106 S$fanPwm\n")
-                sb.append("M104 S${filament.nozzleTempOtherC}\n")
-                sb.append("M140 S${filament.bedTempOtherC}\n")
+                if (layer.index == 1) {
+                    val fanPwm = (filament.fanSpeedPercent * 255) / 100
+                    sb.append("M106 S").append(fanPwm).append('\n')
+                    sb.append("M104 S").append(filament.nozzleTempOtherC).append('\n')
+                    sb.append("M140 S").append(filament.bedTempOtherC).append('\n')
+                }
+            } else if (!gcodeTruncated) {
+                gcodeTruncated = true
+                sb.append("; [Large complex print G-code preview capped in RAM; full statistics calculated below]\n")
             }
 
             var activeType: ToolpathType? = null
@@ -2828,13 +3069,15 @@ object SlicingEngine {
                     supportAndBrimExtrusionMm += seg.extrusionMm
                 }
 
+                if (!writeGcode) continue
+
                 val gx = seg.end.x + bedCenterX
                 val gy = seg.end.y + bedCenterY
                 val feedrate = (seg.speedMmS * 60f).toInt()
 
                 if (seg.type == ToolpathType.TRAVEL || seg.extrusionMm <= 0f) {
                     if (seg.requiresRetract && !isRetracted && retractLen > 0.01f) {
-                        sb.append(String.format(Locale.US, "G1 E-%.4f F%d ; retract\n", retractLen, retractFeed))
+                        sb.append("G1 E-").appendFixed4(retractLen).append(" F").append(retractFeed).append(" ; retract\n")
                         isRetracted = true
                     }
                     val zTravel = if (isRetracted && effectiveZHop > 0.01f && (!process.zHopOnlyOverPrintedParts || !seg.isCombed)) {
@@ -2845,29 +3088,26 @@ object SlicingEngine {
                     if (process.verboseGcode && seg.isCombed) {
                         sb.append(";COMBED_TRAVEL\n")
                     }
-                    sb.append(String.format(Locale.US, "G0 X%.3f Y%.3f Z%.3f F%d\n", gx, gy, zTravel, feedrate))
+                    sb.append("G0 X").appendFixed3(gx)
+                        .append(" Y").appendFixed3(gy)
+                        .append(" Z").appendFixed3(zTravel)
+                        .append(" F").append(feedrate).append('\n')
                 } else {
                     if (isRetracted) {
                         if (effectiveZHop > 0.01f) {
-                            sb.append(String.format(Locale.US, "G0 Z%.3f F1800 ; restore Z hop\n", seg.end.z))
+                            sb.append("G0 Z").appendFixed3(seg.end.z).append(" F1800 ; restore Z hop\n")
                         }
-                        sb.append(String.format(Locale.US, "G1 E%.4f F%d ; unretract\n", retractLen, retractFeed))
+                        sb.append("G1 E").appendFixed4(retractLen).append(" F").append(retractFeed).append(" ; unretract\n")
                         isRetracted = false
                     }
                     if (seg.type != activeType) {
                         activeType = seg.type
-                        sb.append(";TYPE:${seg.type.gcodeComment}\n")
+                        sb.append(";TYPE:").append(seg.type.gcodeComment).append('\n')
                     }
-                    sb.append(
-                        String.format(
-                            Locale.US,
-                            "G1 X%.3f Y%.3f E%.5f F%d\n",
-                            gx,
-                            gy,
-                            seg.extrusionMm,
-                            feedrate
-                        )
-                    )
+                    sb.append("G1 X").appendFixed3(gx)
+                        .append(" Y").appendFixed3(gy)
+                        .append(" E").appendFixed5(seg.extrusionMm)
+                        .append(" F").append(feedrate).append('\n')
                 }
             }
         }

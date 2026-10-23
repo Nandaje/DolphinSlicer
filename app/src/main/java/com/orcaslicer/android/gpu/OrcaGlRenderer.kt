@@ -436,16 +436,26 @@ class OrcaGlRenderer(
             GLES30.glGenBuffers(1, ids, 0)
             ids[0]
         }
-        val byteBuf: FloatBuffer = ByteBuffer
-            .allocateDirect(data.size * 4)
+        val totalBytes = data.size * 4
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vboId)
+        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, totalBytes, null, GLES30.GL_STATIC_DRAW)
+
+        val chunkFloats = min(data.size, 16384)
+        val chunkBuf: FloatBuffer = ByteBuffer
+            .allocateDirect(chunkFloats * 4)
             .order(ByteOrder.nativeOrder())
             .asFloatBuffer()
-            .apply {
-                put(data)
-                position(0)
-            }
-        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, vboId)
-        GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, data.size * 4, byteBuf, GLES30.GL_STATIC_DRAW)
+
+        var offsetFloats = 0
+        while (offsetFloats < data.size) {
+            val count = min(chunkFloats, data.size - offsetFloats)
+            chunkBuf.clear()
+            chunkBuf.put(data, offsetFloats, count)
+            chunkBuf.position(0)
+            GLES30.glBufferSubData(GLES30.GL_ARRAY_BUFFER, offsetFloats * 4, count * 4, chunkBuf)
+            offsetFloats += count
+        }
+
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
         return vboId
     }

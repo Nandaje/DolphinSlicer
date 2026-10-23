@@ -607,11 +607,26 @@ class OrcaViewModel : ViewModel() {
         _uiState.update { it.copy(activeLayerProgress = progress.coerceIn(0.01f, 1.0f)) }
     }
 
+    private var slicingJob: kotlinx.coroutines.Job? = null
+
+    fun cancelSlicing() {
+        slicingJob?.cancel()
+        slicingJob = null
+        _uiState.update {
+            it.copy(
+                isSlicing = false,
+                sliceProgress = 0f,
+                statusBannerMessage = "Slicing cancelled"
+            )
+        }
+    }
+
     fun sliceBuildPlate() {
         val snapshot = _uiState.value
         if (snapshot.isSlicing) return
 
-        viewModelScope.launch {
+        slicingJob?.cancel()
+        slicingJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isSlicing = true,
@@ -620,44 +635,67 @@ class OrcaViewModel : ViewModel() {
                 )
             }
 
-            val result = SlicingEngine.sliceScene(
-                objects = snapshot.sceneObjects,
-                printer = snapshot.selectedPrinter,
-                filament = snapshot.selectedFilament,
-                process = snapshot.currentProcess,
-                onProgress = { progress, msg ->
-                    _uiState.update {
-                        it.copy(sliceProgress = progress, statusBannerMessage = msg)
+            try {
+                val result = SlicingEngine.sliceScene(
+                    objects = snapshot.sceneObjects,
+                    printer = snapshot.selectedPrinter,
+                    filament = snapshot.selectedFilament,
+                    process = snapshot.currentProcess,
+                    onProgress = { progress, msg ->
+                        _uiState.update {
+                            it.copy(sliceProgress = progress, statusBannerMessage = msg)
+                        }
                     }
-                }
-            )
+                )
 
-            result.fold(
-                onSuccess = { sliceRes ->
-                    val topIdx = (sliceRes.layers.size - 1).coerceAtLeast(0)
-                    _uiState.update {
-                        it.copy(
-                            isSlicing = false,
-                            sliceProgress = 1.0f,
-                            sliceResult = sliceRes,
-                            minVisibleLayer = 0,
-                            maxVisibleLayer = topIdx,
-                            activeLayerProgress = 1.0f,
-                            activeWorkspaceTab = WorkspaceTab.PREVIEW,
-                            statusBannerMessage = "Sliced ${sliceRes.statistics.layerCount} layers • Est. ${sliceRes.statistics.formattedTotalTime} • ${String.format("%.1f", sliceRes.statistics.filamentWeightGrams)}g"
-                        )
+                result.fold(
+                    onSuccess = { sliceRes ->
+                        val topIdx = (sliceRes.layers.size - 1).coerceAtLeast(0)
+                        _uiState.update {
+                            it.copy(
+                                isSlicing = false,
+                                sliceProgress = 1.0f,
+                                sliceResult = sliceRes,
+                                minVisibleLayer = 0,
+                                maxVisibleLayer = topIdx,
+                                activeLayerProgress = 1.0f,
+                                activeWorkspaceTab = WorkspaceTab.PREVIEW,
+                                statusBannerMessage = "Sliced ${sliceRes.statistics.layerCount} layers • Est. ${sliceRes.statistics.formattedTotalTime} • ${String.format("%.1f", sliceRes.statistics.filamentWeightGrams)}g"
+                            )
+                        }
+                    },
+                    onFailure = { err ->
+                        _uiState.update {
+                            it.copy(
+                                isSlicing = false,
+                                sliceProgress = 0f,
+                                statusBannerMessage = err.message ?: "Failed to slice plate"
+                            )
+                        }
                     }
-                },
-                onFailure = { err ->
-                    _uiState.update {
-                        it.copy(
-                            isSlicing = false,
-                            sliceProgress = 0f,
-                            statusBannerMessage = err.message ?: "Failed to slice plate"
-                        )
-                    }
+                )
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                _uiState.update {
+                    it.copy(
+                        isSlicing = false,
+                        sliceProgress = 0f,
+                        statusBannerMessage = "Slicing cancelled"
+                    )
                 }
-            )
+                throw ce
+            } catch (t: Throwable) {
+                _uiState.update {
+                    it.copy(
+                        isSlicing = false,
+                        sliceProgress = 0f,
+                        statusBannerMessage = "Slicing error: ${t.message ?: t.javaClass.simpleName}"
+                    )
+                }
+            } finally {
+                _uiState.update { state ->
+                    if (state.isSlicing) state.copy(isSlicing = false) else state
+                }
+            }
         }
     }
 

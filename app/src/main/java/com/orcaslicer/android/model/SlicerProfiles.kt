@@ -676,20 +676,40 @@ class SliceResult(
     val layerRibbonVertexCount: IntArray
 
     init {
-        var totalSegments = 0
-        var totalExtrusionSegments = 0
+        var rawTotalSegments = 0
+        var rawTotalExtrusionSegments = 0
         for (l in layers) {
-            totalSegments += l.segments.size
+            rawTotalSegments += l.segments.size
             for (s in l.segments) {
-                if (s.type != ToolpathType.TRAVEL) totalExtrusionSegments++
+                if (s.type != ToolpathType.TRAVEL) rawTotalExtrusionSegments++
             }
         }
 
-        val verts = FloatArray(totalSegments * 14)
+        // Cap GPU VBO vertex buffers on ultra-complex prints so mobile heaps never hit OutOfMemoryError
+        val maxGpuSegments = 120_000
+        val segStride = if (rawTotalSegments > maxGpuSegments) {
+            ((rawTotalSegments + maxGpuSegments - 1) / maxGpuSegments).coerceAtLeast(1)
+        } else {
+            1
+        }
+
+        var sampledSegments = 0
+        var sampledExtrusionSegments = 0
+        for (l in layers) {
+            val segs = l.segments
+            var i = 0
+            while (i < segs.size) {
+                sampledSegments++
+                if (segs[i].type != ToolpathType.TRAVEL) sampledExtrusionSegments++
+                i += segStride
+            }
+        }
+
+        val verts = FloatArray(sampledSegments * 14)
         val starts = IntArray(layers.size)
         val counts = IntArray(layers.size)
 
-        val ribbonVerts = FloatArray(totalExtrusionSegments * 6 * 7)
+        val ribbonVerts = FloatArray(sampledExtrusionSegments * 6 * 7)
         val ribbonStarts = IntArray(layers.size)
         val ribbonCounts = IntArray(layers.size)
 
@@ -700,14 +720,17 @@ class SliceResult(
 
         for ((layerIdx, layer) in layers.withIndex()) {
             starts[layerIdx] = vertCursor
-            val segCount = layer.segments.size
-            counts[layerIdx] = segCount * 2
-            vertCursor += segCount * 2
+            var layerLineVerts = 0
 
             ribbonStarts[layerIdx] = ribbonVertCursor
             var layerRibbonVerts = 0
 
-            for (seg in layer.segments) {
+            val segs = layer.segments
+            var sIdx = 0
+            while (sIdx < segs.size) {
+                val seg = segs[sIdx]
+                sIdx += segStride
+
                 val t = seg.type
                 val tf = t.ordinal.toFloat()
                 verts[floatIdx++] = seg.start.x
@@ -725,6 +748,9 @@ class SliceResult(
                 verts[floatIdx++] = t.g
                 verts[floatIdx++] = t.b
                 verts[floatIdx++] = tf
+
+                layerLineVerts += 2
+                vertCursor += 2
 
                 if (t != ToolpathType.TRAVEL) {
                     val dx = seg.end.x - seg.start.x
@@ -773,6 +799,7 @@ class SliceResult(
                     ribbonVertCursor += 6
                 }
             }
+            counts[layerIdx] = layerLineVerts
             ribbonCounts[layerIdx] = layerRibbonVerts
         }
         gpuToolpathVertices = verts

@@ -490,7 +490,7 @@ private fun OrcaMobileReferenceHeader(
                                 .padding(horizontal = 3.dp, vertical = 0.5.dp)
                         ) {
                             Text(
-                                text = "v1.1.4",
+                                text = "v1.1.5",
                                 fontSize = 8.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = OrcaTealBright,
@@ -988,7 +988,7 @@ private fun OrcaMobileReferenceHeader(
                         OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
                         Column {
                             Text(
-                                text = "DolphinSlicer v1.1.4",
+                                text = "DolphinSlicer v1.1.5",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = OrcaTealBright
@@ -1801,6 +1801,24 @@ private fun ViewportWithTouchOverlays(
                         fontFamily = FontFamily.Monospace,
                         color = OrcaTextSecondary
                     )
+                    if (state.isSlicing) {
+                        Spacer(Modifier.height(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(OrcaElevatedBg)
+                                .border(1.dp, OrcaBorder, RoundedCornerShape(8.dp))
+                                .clickable { viewModel.cancelSlicing() }
+                                .padding(horizontal = 14.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = "CANCEL SLICING",
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFEF5350)
+                            )
+                        }
+                    }
                 }
             }
         }
