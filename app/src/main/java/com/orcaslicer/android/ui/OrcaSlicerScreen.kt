@@ -4,6 +4,9 @@ import android.content.res.Configuration
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -110,10 +113,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -1021,7 +1027,7 @@ private fun OrcaMobileReferenceHeader(
                         OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
                         Column {
                             Text(
-                                text = "DolphinSlicer v1.2.1",
+                                text = "DolphinSlicer v1.2.2",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = OrcaTealBright
@@ -1212,7 +1218,9 @@ private fun ViewportWithTouchOverlays(
             showTransformGizmo = !isPreview && state.selectedObjectId != null,
             cutPlaneHeightMm = state.cutPlaneHeightMm,
             onObjectSelected = viewModel::selectObject,
-            onTransformSelectedObject = viewModel::updateSelectedObject
+            onTransformSelectedObject = viewModel::updateSelectedObject,
+            onUpdateCutPlaneHeight = viewModel::updateCutPlaneHeight,
+            onLayOnFaceSelected = viewModel::laySelectedObjectOnLocalNormal
         )
 
         // 2. PREPARE MODE: Left Vertical Tool Palette (`#prepareToolsToolbar`, HTML lines 226-248)
@@ -1266,9 +1274,9 @@ private fun ViewportWithTouchOverlays(
                 )
                 GlassToolIconButton(
                     icon = Icons.Default.VerticalAlignBottom,
-                    title = "Lay Flat / Auto Orient",
-                    active = false,
-                    onClick = viewModel::laySelectedObjectFlat
+                    title = "Lay on Face (Place on Face)",
+                    active = state.showFloatingGizmoSheet && state.activeGizmoMode == TransformGizmoMode.LAY_ON_FACE,
+                    onClick = { viewModel.selectGizmoMode(TransformGizmoMode.LAY_ON_FACE) }
                 )
                 GlassToolIconButton(
                     icon = Icons.Default.Flip,
@@ -1964,36 +1972,76 @@ private fun OrcaReferenceBottomDrawer(
 
     val density = LocalDensity.current
     val maxBodyDpVal = maxSheetBodyHeightDp.value.coerceAtLeast(220f)
-    var sheetBodyHeightDp by remember { mutableFloatStateOf(260f) }
-    val clampedBodyHeightDp = sheetBodyHeightDp.coerceIn(110f, maxBodyDpVal)
+    var expandedTargetHeightDp by remember { mutableFloatStateOf(270f) }
+    var isDraggingSheet by remember { mutableStateOf(false) }
+    var draggedHeightDp by remember { mutableFloatStateOf(0f) }
+    var handleRootY by remember { mutableFloatStateOf(0f) }
+    var dragStartFingerRootY by remember { mutableFloatStateOf(0f) }
+    var dragStartHeightDp by remember { mutableFloatStateOf(0f) }
+
+    val targetBodyHeightDp = if (isDraggingSheet) {
+        draggedHeightDp.coerceIn(0f, maxBodyDpVal)
+    } else if (state.isDockExpanded) {
+        expandedTargetHeightDp.coerceIn(110f, maxBodyDpVal)
+    } else {
+        0f
+    }
+
+    val animatedBodyHeightDp by animateFloatAsState(
+        targetValue = targetBodyHeightDp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "bottomDrawerHeight"
+    )
+    // Use direct 1:1 finger height while actively dragging so there is zero spring lag; animate smoothly on tap/release
+    val currentBodyHeightDp = if (isDraggingSheet) targetBodyHeightDp else animatedBodyHeightDp
 
     val slice = state.sliceResult
     val stats = slice?.statistics
     val cost = stats?.calculateFullCostBreakdown(state.selectedPrinter, state.selectedFilament)
     val cur = state.selectedFilament.currencySymbol
 
-    val dragGestureModifier = Modifier.pointerInput(maxBodyDpVal, state.isDockExpanded) {
-        detectVerticalDragGestures(
-            onVerticalDrag = { change, dragAmountPx ->
-                change.consume()
-                val deltaDp = with(density) { dragAmountPx.toDp().value }
-                if (!state.isDockExpanded) {
-                    if (deltaDp < -2f) {
-                        sheetBodyHeightDp = (-deltaDp).coerceIn(110f, maxBodyDpVal)
-                        viewModel.toggleDockExpanded()
-                    }
-                } else {
-                    val nextDp = sheetBodyHeightDp - deltaDp
-                    if (nextDp < 65f && deltaDp > 0f) {
-                        sheetBodyHeightDp = 260f
-                        viewModel.toggleDockExpanded()
+    // Root-coordinate vertical drag gesture: immune to the handle moving vertically as the sheet grows/shrinks
+    val dragGestureModifier = Modifier
+        .onGloballyPositioned { coords ->
+            handleRootY = coords.positionInRoot().y
+        }
+        .pointerInput(maxBodyDpVal) {
+            detectVerticalDragGestures(
+                onDragStart = { startOffset ->
+                    isDraggingSheet = true
+                    dragStartHeightDp = currentBodyHeightDp
+                    draggedHeightDp = currentBodyHeightDp
+                    dragStartFingerRootY = handleRootY + startOffset.y
+                },
+                onVerticalDrag = { change, _ ->
+                    change.consume()
+                    val currentFingerRootY = handleRootY + change.position.y
+                    val totalDeltaUpPx = dragStartFingerRootY - currentFingerRootY
+                    val totalDeltaUpDp = with(density) { totalDeltaUpPx.toDp().value }
+                    draggedHeightDp = (dragStartHeightDp + totalDeltaUpDp).coerceIn(0f, maxBodyDpVal)
+                },
+                onDragEnd = {
+                    val finalDp = draggedHeightDp
+                    isDraggingSheet = false
+                    if (finalDp < 72f) {
+                        if (state.isDockExpanded) viewModel.toggleDockExpanded()
                     } else {
-                        sheetBodyHeightDp = nextDp.coerceIn(90f, maxBodyDpVal)
+                        expandedTargetHeightDp = if (finalDp > maxBodyDpVal * 0.90f) {
+                            maxBodyDpVal
+                        } else {
+                            finalDp.coerceIn(120f, maxBodyDpVal)
+                        }
+                        if (!state.isDockExpanded) viewModel.toggleDockExpanded()
                     }
+                },
+                onDragCancel = {
+                    isDraggingSheet = false
                 }
-            }
-        )
-    }
+            )
+        }
 
     Column(
         modifier = modifier
@@ -2009,11 +2057,11 @@ private fun OrcaReferenceBottomDrawer(
                 .then(dragGestureModifier)
                 .clickable {
                     if (!state.isDockExpanded) {
-                        sheetBodyHeightDp = (maxBodyDpVal * 0.55f).coerceIn(220f, maxBodyDpVal)
+                        expandedTargetHeightDp = (maxBodyDpVal * 0.55f).coerceIn(220f, maxBodyDpVal)
                         viewModel.toggleDockExpanded()
-                    } else if (sheetBodyHeightDp < maxBodyDpVal * 0.85f) {
+                    } else if (expandedTargetHeightDp < maxBodyDpVal * 0.85f) {
                         // Second tap pulls full to the top in front of the 3D viewport
-                        sheetBodyHeightDp = maxBodyDpVal
+                        expandedTargetHeightDp = maxBodyDpVal
                     } else {
                         viewModel.toggleDockExpanded()
                     }
@@ -2027,11 +2075,11 @@ private fun OrcaReferenceBottomDrawer(
                     .width(42.dp)
                     .height(4.dp)
                     .clip(RoundedCornerShape(999.dp))
-                    .background(if (state.isDockExpanded) OrcaTealBright else Color(0xFF475569))
+                    .background(if (state.isDockExpanded || isDraggingSheet) OrcaTealBright else Color(0xFF475569))
             )
         }
 
-        // 2. Quick Estimation & Header Summary Bar (also supports vertical drag resizing)
+        // 2. Quick Estimation & Header Summary Bar (also supports smooth vertical drag resizing)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2094,8 +2142,8 @@ private fun OrcaReferenceBottomDrawer(
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 // Full-screen / Half-screen height toggle pill when expanded
-                if (state.isDockExpanded) {
-                    val isFullTop = clampedBodyHeightDp >= maxBodyDpVal * 0.88f
+                if (state.isDockExpanded || currentBodyHeightDp > 40f) {
+                    val isFullTop = currentBodyHeightDp >= maxBodyDpVal * 0.88f
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
@@ -2106,11 +2154,12 @@ private fun OrcaReferenceBottomDrawer(
                                 RoundedCornerShape(6.dp)
                             )
                             .clickable {
-                                sheetBodyHeightDp = if (isFullTop) {
+                                expandedTargetHeightDp = if (isFullTop) {
                                     (maxBodyDpVal * 0.52f).coerceIn(220f, maxBodyDpVal)
                                 } else {
                                     maxBodyDpVal
                                 }
+                                if (!state.isDockExpanded) viewModel.toggleDockExpanded()
                             }
                             .padding(horizontal = 6.dp, vertical = 3.5.dp)
                     ) {
@@ -2215,12 +2264,12 @@ private fun OrcaReferenceBottomDrawer(
             }
         }
 
-        // 3. Detailed Multi-Tab Parameter Sheet (`#drawerSettingsBody`, dynamically sized up to full viewport height)
-        AnimatedVisibility(visible = state.isDockExpanded) {
+        // 3. Detailed Multi-Tab Parameter Sheet (`#drawerSettingsBody`, smoothly sized from 0.dp up to full viewport height)
+        if (currentBodyHeightDp > 2f) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(clampedBodyHeightDp.dp)
+                    .height(currentBodyHeightDp.dp)
                     .padding(horizontal = 10.dp, vertical = 3.dp)
             ) {
                 when (drawerSubView) {
@@ -3113,23 +3162,113 @@ private fun FloatingGizmoControlCard(
                 }
 
                 TransformGizmoMode.CUT -> {
-                    val objHeight = selected.mesh.localBounds.size.z.coerceAtLeast(2f)
+                    val objHeight = selected.worldBoundingBox().size.z.coerceAtLeast(2f)
+                    val safeMaxCut = (objHeight - 0.5f).coerceAtLeast(1.0f)
+                    val clampedCutZ = state.cutPlaneHeightMm.coerceIn(0.5f, safeMaxCut)
+                    Text(
+                        text = "Drag the blue vertical arrow in the 3D viewport or adjust the cut plane height below:",
+                        fontSize = 10.sp,
+                        color = OrcaTextSecondary
+                    )
                     TouchNumberSetting(
-                        label = "Horizontal Cut Plane Z",
-                        valueText = String.format(Locale.US, "%.1f mm", state.cutPlaneHeightMm.coerceIn(1f, objHeight)),
-                        value = state.cutPlaneHeightMm.coerceIn(1f, objHeight),
-                        range = 1.0f..objHeight,
+                        label = "Cut Plane Height Z (World)",
+                        valueText = String.format(Locale.US, "%.2f / %.1f mm", clampedCutZ, objHeight),
+                        value = clampedCutZ,
+                        range = 0.5f..safeMaxCut,
                         step = 0.5f,
                         onValueChange = viewModel::updateCutPlaneHeight
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ViewportMiniBtn("25%") { viewModel.updateCutPlaneHeight(objHeight * 0.25f) }
+                        ViewportMiniBtn("50% (Center)") { viewModel.updateCutPlaneHeight(objHeight * 0.50f) }
+                        ViewportMiniBtn("75%") { viewModel.updateCutPlaneHeight(objHeight * 0.75f) }
+                    }
+                    // OrcaSlicer Cut Options: Keep Upper, Keep Lower, Place on Cut Face
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ViewportMiniBtn(
+                            label = if (state.cutKeepUpper) "✓ Keep Upper" else "Keep Upper",
+                            active = state.cutKeepUpper,
+                            onClick = { viewModel.updateCutOptions(keepUpper = !state.cutKeepUpper) }
+                        )
+                        ViewportMiniBtn(
+                            label = if (state.cutKeepLower) "✓ Keep Lower" else "Keep Lower",
+                            active = state.cutKeepLower,
+                            onClick = { viewModel.updateCutOptions(keepLower = !state.cutKeepLower) }
+                        )
+                        ViewportMiniBtn(
+                            label = if (state.cutPlaceOnCutFace) "✓ Place on Cut" else "Place on Cut",
+                            active = state.cutPlaceOnCutFace,
+                            onClick = { viewModel.updateCutOptions(placeOnCutFace = !state.cutPlaceOnCutFace) }
+                        )
+                    }
                     Button(
-                        onClick = { viewModel.cutSelectedObjectAtZ(state.cutPlaneHeightMm) },
+                        onClick = { viewModel.cutSelectedObjectAtZ(clampedCutZ) },
                         colors = ButtonDefaults.buttonColors(containerColor = OrcaTealBright, contentColor = Color(0xFF041F18)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.ContentCut, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Perform Cut into Lower & Upper Objects", fontWeight = FontWeight.Bold)
+                        Text("Perform Cut", fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                TransformGizmoMode.LAY_ON_FACE -> {
+                    val candidates = selected.mesh.layOnFaceCandidates
+                    Text(
+                        text = "Tap any highlighted white/cyan face patch directly on the 3D model in the viewport to place that face flat on the build plate (Z = 0):",
+                        fontSize = 10.sp,
+                        color = OrcaTextSecondary
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Button(
+                            onClick = viewModel::autoOrientSelectedObjectLargestFace,
+                            colors = ButtonDefaults.buttonColors(containerColor = OrcaTealBright, contentColor = Color(0xFF041F18)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.VerticalAlignBottom, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Auto-Orient (Largest Face)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = viewModel::laySelectedObjectFlat
+                        ) {
+                            Text("Snap 90°", fontSize = 11.sp)
+                        }
+                    }
+                    if (candidates.isNotEmpty()) {
+                        Text(
+                            text = "Detected Flat Exterior Faces (${candidates.size}):",
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OrcaTextPrimary
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            candidates.take(10).forEachIndexed { idx, cand ->
+                                val worldN = selected.transformNormal(cand.localNormal)
+                                val isCurrentBase = worldN.z < -0.97f
+                                ViewportMiniBtn(
+                                    label = "#${idx + 1} ${cand.label} (${cand.areaMm2.toInt()} mm²)",
+                                    active = isCurrentBase,
+                                    onClick = {
+                                        viewModel.laySelectedObjectOnLocalNormal(
+                                            cand.localNormal,
+                                            "${cand.label} • ${cand.areaMm2.toInt()} mm²"
+                                        )
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -3501,17 +3640,28 @@ private fun DeviceNetworkPanel(
     state: OrcaUiState,
     viewModel: OrcaViewModel
 ) {
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     var showApiDrawer by remember { mutableStateOf(false) }
     var webViewRef by remember { mutableStateOf<android.webkit.WebView?>(null) }
     var isLoadingPage by remember { mutableStateOf(false) }
     var loadProgress by remember { mutableIntStateOf(0) }
+    var hasNavigatedUrl by remember { mutableStateOf(state.printerHost.trim() != "192.168.1.100" && state.printerHost.isNotBlank()) }
+    var pageLoadError by remember { mutableStateOf<String?>(null) }
 
     var addressBarText by remember {
         val initHost = state.printerHost.trim().ifEmpty { "192.168.1.100" }
-        mutableStateOf(if (initHost.startsWith("http://", ignoreCase = true) || initHost.startsWith("https://", ignoreCase = true)) initHost else "http://$initHost")
+        mutableStateOf(
+            if (initHost.startsWith("http://", ignoreCase = true) || initHost.startsWith("https://", ignoreCase = true)) {
+                initHost
+            } else {
+                "http://$initHost"
+            }
+        )
     }
 
     fun navigateToAddress(rawInput: String) {
+        focusManager.clearFocus()
         val trimmed = rawInput.trim().ifEmpty { "192.168.1.100" }
         val normalizedUrl = if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
             trimmed
@@ -3523,6 +3673,11 @@ private fun DeviceNetworkPanel(
         if (hostOnly.isNotBlank()) {
             viewModel.updatePrinterNetworkConfig(host = hostOnly)
         }
+        pageLoadError = null
+        hasNavigatedUrl = true
+        isLoadingPage = true
+        loadProgress = 12
+        webViewRef?.stopLoading()
         webViewRef?.loadUrl(normalizedUrl)
     }
 
@@ -3803,69 +3958,262 @@ private fun DeviceNetworkPanel(
             }
         }
 
-        // 3. Full-Screen Web Browser View (Fluidd / Mainsail / Printer IP)
-        androidx.compose.ui.viewinterop.AndroidView(
+        // 3. Full-Screen Web Browser View (Fluidd / Mainsail / Printer IP) with Start & Error Hub so screen is never blank
+        Box(
             modifier = Modifier
                 .weight(1f)
-                .fillMaxWidth(),
-            factory = { ctx ->
-                android.webkit.WebView(ctx).apply {
-                    layoutParams = android.view.ViewGroup.LayoutParams(
-                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                    isFocusable = true
-                    isFocusableInTouchMode = true
-                    setBackgroundColor(android.graphics.Color.parseColor("#16181D"))
-                    android.webkit.CookieManager.getInstance().setAcceptCookie(true)
-                    android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                    settings.apply {
-                        javaScriptEnabled = true
-                        domStorageEnabled = true
-                        databaseEnabled = true
-                        allowFileAccess = true
-                        allowContentAccess = true
-                        javaScriptCanOpenWindowsAutomatically = true
-                        setSupportZoom(true)
-                        useWideViewPort = true
-                        loadWithOverviewMode = true
-                        builtInZoomControls = true
-                        displayZoomControls = false
-                        mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                        cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
-                    }
-                    webViewClient = object : android.webkit.WebViewClient() {
-                        override fun shouldOverrideUrlLoading(
-                            view: android.webkit.WebView?,
-                            request: android.webkit.WebResourceRequest?
-                        ): Boolean {
-                            return false
+                .fillMaxWidth()
+                .background(OrcaDarkBg)
+        ) {
+            androidx.compose.ui.viewinterop.AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    android.webkit.WebView(ctx).apply {
+                        layoutParams = android.view.ViewGroup.LayoutParams(
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        isFocusable = true
+                        isFocusableInTouchMode = true
+                        setBackgroundColor(android.graphics.Color.parseColor("#16181D"))
+                        android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                        android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                        settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            databaseEnabled = true
+                            loadsImagesAutomatically = true
+                            allowFileAccess = true
+                            allowContentAccess = true
+                            javaScriptCanOpenWindowsAutomatically = true
+                            setSupportZoom(true)
+                            useWideViewPort = true
+                            loadWithOverviewMode = true
+                            builtInZoomControls = true
+                            displayZoomControls = false
+                            mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                            cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
                         }
+                        webViewClient = object : android.webkit.WebViewClient() {
+                            override fun shouldOverrideUrlLoading(
+                                view: android.webkit.WebView?,
+                                request: android.webkit.WebResourceRequest?
+                            ): Boolean {
+                                return false
+                            }
 
-                        override fun onPageStarted(view: android.webkit.WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                            isLoadingPage = true
-                            if (!url.isNullOrBlank()) {
-                                addressBarText = url
+                            override fun onPageStarted(view: android.webkit.WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                                isLoadingPage = true
+                                if (!url.isNullOrBlank() && url != "about:blank") {
+                                    addressBarText = url
+                                    hasNavigatedUrl = true
+                                }
+                            }
+
+                            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                isLoadingPage = false
+                            }
+
+                            override fun onReceivedError(
+                                view: android.webkit.WebView?,
+                                request: android.webkit.WebResourceRequest?,
+                                error: android.webkit.WebResourceError?
+                            ) {
+                                if (request?.isForMainFrame == true) {
+                                    isLoadingPage = false
+                                    val desc = error?.description?.toString() ?: "Unable to connect to printer host"
+                                    val failedUrl = request.url?.toString() ?: addressBarText
+                                    pageLoadError = "$desc ($failedUrl)"
+                                }
+                            }
+
+                            @android.annotation.SuppressLint("WebViewClientOnReceivedSslError")
+                            override fun onReceivedSslError(
+                                view: android.webkit.WebView?,
+                                handler: android.webkit.SslErrorHandler?,
+                                error: android.net.http.SslError?
+                            ) {
+                                // Proceed on self-signed HTTPS certificates commonly used on local Klipper / Mainsail / OctoPrint hosts
+                                handler?.proceed()
                             }
                         }
-
-                        override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
-                            isLoadingPage = false
+                        webChromeClient = object : android.webkit.WebChromeClient() {
+                            override fun onProgressChanged(view: android.webkit.WebView?, newProgress: Int) {
+                                loadProgress = newProgress
+                                if (newProgress >= 100) isLoadingPage = false
+                            }
+                        }
+                        webViewRef = this
+                        if (hasNavigatedUrl) {
+                            loadUrl(addressBarText)
                         }
                     }
-                    webChromeClient = object : android.webkit.WebChromeClient() {
-                        override fun onProgressChanged(view: android.webkit.WebView?, newProgress: Int) {
-                            loadProgress = newProgress
-                            if (newProgress >= 100) isLoadingPage = false
-                        }
-                    }
-                    webViewRef = this
-                    loadUrl(addressBarText)
+                },
+                update = { view ->
+                    webViewRef = view
                 }
-            },
-            update = { view ->
-                webViewRef = view
+            )
+
+            // Interactive Browser Start & Diagnostic Overlay (shown before first navigation or when host is unreachable)
+            if (!hasNavigatedUrl || pageLoadError != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(OrcaDarkBg.copy(alpha = 0.96f))
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = OrcaCardBg),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .width(460.dp)
+                            .border(1.dp, OrcaBorder, RoundedCornerShape(14.dp))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Wifi,
+                                    contentDescription = null,
+                                    tint = OrcaTealBright,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = "Klipper / Fluidd / Mainsail Web Browser",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = "Enter your 3D printer's local IP address or hostname above and tap GO.",
+                                        fontSize = 11.sp,
+                                        color = OrcaTextSecondary
+                                    )
+                                }
+                            }
+
+                            if (pageLoadError != null) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color(0x26EF5350))
+                                        .border(1.dp, Color(0x88EF5350), RoundedCornerShape(8.dp))
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "Could not reach printer web UI",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFF8A80)
+                                    )
+                                    Text(
+                                        text = pageLoadError ?: "",
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = OrcaTextSecondary
+                                    )
+                                    Text(
+                                        text = "Make sure your phone/tablet is on the same Wi-Fi LAN as your Klipper printer.",
+                                        fontSize = 10.sp,
+                                        color = OrcaTextSecondary
+                                    )
+                                }
+                            }
+
+                            OutlinedTextField(
+                                value = addressBarText,
+                                onValueChange = { addressBarText = it },
+                                label = { Text("Printer IP / URL (e.g. http://192.168.1.50 or http://fluidd.local)", fontSize = 11.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { navigateToAddress(addressBarText) },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = OrcaTealBright,
+                                        contentColor = Color(0xFF04141E)
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Wifi, contentDescription = null, modifier = Modifier.size(15.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = if (pageLoadError != null) "Retry Connection" else "Open Printer Web UI",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        runCatching {
+                                            val target = if (addressBarText.startsWith("http")) addressBarText else "http://$addressBarText"
+                                            context.startActivity(
+                                                android.content.Intent(
+                                                    android.content.Intent.ACTION_VIEW,
+                                                    android.net.Uri.parse(target)
+                                                )
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    Text("External Browser", fontSize = 11.sp)
+                                }
+                            }
+
+                            Text(
+                                text = "Quick Bookmarks & Endpoints:",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = OrcaTextPrimary
+                            )
+
+                            val cleanHost = state.printerHost.trim().ifEmpty { "192.168.1.100" }
+                                .substringAfter("://")
+                                .substringBefore("/")
+                                .substringBefore(":")
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "Fluidd / Mainsail (:80)" to "http://$cleanHost",
+                                    "Moonraker (:7125)" to "http://$cleanHost:7125",
+                                    "fluidd.local" to "http://fluidd.local",
+                                    "mainsailos.local" to "http://mainsailos.local",
+                                    "OctoPrint (:5000)" to "http://$cleanHost:5000",
+                                    "Test Web (Google)" to "https://www.google.com"
+                                ).forEach { (title, url) ->
+                                    ViewportMiniBtn(
+                                        label = title,
+                                        active = addressBarText.equals(url, ignoreCase = true),
+                                        onClick = { navigateToAddress(url) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
-        )
+        }
     }
 }

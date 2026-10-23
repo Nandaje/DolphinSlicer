@@ -511,4 +511,46 @@ class OrcaSlicerEngineTest {
         assertEquals("Re-imported G-code center X is aligned at 0.0mm", 0.0f, (gMinX + gMaxX) * 0.5f, 0.25f)
         assertEquals("Re-imported G-code center Y is aligned at 0.0mm", 0.0f, (gMinY + gMaxY) * 0.5f, 0.25f)
     }
+
+    @Test
+    fun `OrcaSlicer Lay on Face and Cut at World Z plane tools compute exact orientations and clipped solids`() {
+        val cubeMesh = ProceduralMeshes.createCalibrationCube(20f)
+        val candidates = cubeMesh.layOnFaceCandidates
+        assertTrue("Calibration cube must expose >= 6 outer planar face candidates", candidates.size >= 6)
+
+        val baseObj = SceneObject(
+            id = "lay-test",
+            name = "LayCube",
+            sourceFormat = "PRIMITIVE",
+            mesh = cubeMesh
+        )
+
+        // Verify that laying any candidate face flat rotates its local normal to point straight down at the bed (0, 0, -1)
+        for (cand in candidates) {
+            assertTrue("Candidate face polygon should have >= 3 vertices", cand.localPolygon.size >= 3)
+            val rot = baseObj.rotationToLayNormalFlat(cand.localNormal)
+            val rotatedObj = baseObj.copy(rotationDeg = rot).snappedToBed()
+            val worldNormal = rotatedObj.transformNormal(cand.localNormal)
+            assertEquals("Rotated face normal X should be 0 for ${cand.label}", 0.0f, worldNormal.x, 1e-3f)
+            assertEquals("Rotated face normal Y should be 0 for ${cand.label}", 0.0f, worldNormal.y, 1e-3f)
+            assertEquals("Rotated face normal Z should be -1 (down to bed) for ${cand.label}", -1.0f, worldNormal.z, 1e-3f)
+
+            val wb = rotatedObj.worldBoundingBox()
+            assertEquals("Snapped object min Z must sit flush at Z = 0.0", 0.0f, wb.min.z, 1e-3f)
+        }
+
+        // Also test an arbitrary 45-degree angled normal
+        val angledNormal = com.orcaslicer.android.model.Vec3(0.5f, -0.5f, 0.70710677f).normalized()
+        val angledRot = baseObj.rotationToLayNormalFlat(angledNormal)
+        val angledWorldN = baseObj.copy(rotationDeg = angledRot).transformNormal(angledNormal)
+        assertEquals("Angled normal X after Lay on Face", 0.0f, angledWorldN.x, 1e-3f)
+        assertEquals("Angled normal Y after Lay on Face", 0.0f, angledWorldN.y, 1e-3f)
+        assertEquals("Angled normal Z after Lay on Face", -1.0f, angledWorldN.z, 1e-3f)
+
+        // Verify Cut at World Z = 10.0mm splits a 20mm cube into two 10mm tall capped solids
+        val (lowerMesh, upperMesh) = ProceduralMeshes.cutTrianglesAtWorldZ(baseObj.worldTriangles(), 10.0f)
+        assertTrue("Lower cut part should have triangles", lowerMesh.triangleCount >= 12)
+        assertTrue("Upper cut part should have triangles", upperMesh.triangleCount >= 12)
+        assertEquals("Lower cut part height should be 10.0mm", 10.0f, lowerMesh.localBounds.size.z, 0.05f)
+    }
 }

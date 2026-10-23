@@ -48,11 +48,12 @@ class OrcaGlRenderer(
     @Volatile var showOverhangHighlight: Boolean = true
     @Volatile var overhangThresholdDeg: Int = 45
 
-    // 3D Transform Gizmo state (0=MOVE, 1=SCALE, 2=ROTATE, 3=CUT, 4=MIRROR, 5=MEASURE, -1=HIDDEN)
+    // 3D Transform Gizmo state (0=MOVE, 1=SCALE, 2=ROTATE, 3=CUT, 4=MIRROR, 5=MEASURE, 6=LAY_ON_FACE, -1=HIDDEN)
     @Volatile var activeGizmoModeOrdinal: Int = 0
     @Volatile var showTransformGizmo: Boolean = true
     @Volatile var activeDraggedAxis: Int = -1 // -1=none, 0=X, 1=Y, 2=Z, 3=XY/Uniform
     @Volatile var cutPlaneHeightMm: Float = 10f
+    @Volatile var onLayOnFacePicked: ((Vec3, String) -> Unit)? = null
 
     // Preview mode toolpath state
     @Volatile var isPreviewMode: Boolean = false
@@ -618,17 +619,88 @@ class OrcaGlRenderer(
             }
 
             3 -> {
-                // CUT PLANE GIZMO: Horizontal slice plane at Z = cutPlaneHeightMm
-                val cutZ = cutPlaneHeightMm.coerceIn(0.5f, bMaxZ)
-                val pad = 8f
+                // CUT PLANE GIZMO: Interactive horizontal slice plane at Z = cutPlaneHeightMm + vertical Z drag handle
+                val cutZ = cutPlaneHeightMm.coerceIn(0.5f, (bMaxZ - 0.5f).coerceAtLeast(1f))
+                val pad = 10f
                 val x0 = bMinX - pad; val x1 = bMaxX + pad
                 val y0 = bMinY - pad; val y1 = bMaxY + pad
-                addLine(x0, y0, cutZ, x1, y0, cutZ, 0.16f, 0.67f, 0.89f)
-                addLine(x1, y0, cutZ, x1, y1, cutZ, 0.16f, 0.67f, 0.89f)
-                addLine(x1, y1, cutZ, x0, y1, cutZ, 0.16f, 0.67f, 0.89f)
-                addLine(x0, y1, cutZ, x0, y0, cutZ, 0.16f, 0.67f, 0.89f)
+                val pr = if (activeDraggedAxis == 2) 1.0f else 0.16f
+                val pg = if (activeDraggedAxis == 2) 0.95f else 0.67f
+                val pb = if (activeDraggedAxis == 2) 0.25f else 0.96f
+
+                // Outer cut plane frame
+                addLine(x0, y0, cutZ, x1, y0, cutZ, pr, pg, pb)
+                addLine(x1, y0, cutZ, x1, y1, cutZ, pr, pg, pb)
+                addLine(x1, y1, cutZ, x0, y1, cutZ, pr, pg, pb)
+                addLine(x0, y1, cutZ, x0, y0, cutZ, pr, pg, pb)
+                // Cross-hairs on the cut plane
+                addLine(x0, cy, cutZ, x1, cy, cutZ, pr * 0.8f, pg * 0.8f, pb * 0.8f)
+                addLine(cx, y0, cutZ, cx, y1, cutZ, pr * 0.8f, pg * 0.8f, pb * 0.8f)
+
+                // Translucent cut plane quad
                 addTri(x0, y0, cutZ, x1, y0, cutZ, x1, y1, cutZ, 0.16f, 0.67f, 0.89f)
                 addTri(x0, y0, cutZ, x1, y1, cutZ, x0, y1, cutZ, 0.16f, 0.67f, 0.89f)
+
+                // Vertical Z-drag arrow handle centered on the cut plane (OrcaSlicer interactive Cut handle)
+                val handleLen = (gizmoLen * 0.58f).coerceIn(16f, 45f)
+                val coneLen = (handleLen * 0.30f).coerceIn(4.5f, 12f)
+                val coneRad = coneLen * 0.42f
+                val zTop = cutZ + handleLen
+                val zBot = (cutZ - handleLen).coerceAtLeast(0.2f)
+                addLine(cx, cy, zBot, cx, cy, zTop, zr, zg, zb)
+                addCubeHandle(cx, cy, cutZ, coneRad * 0.7f, 0.95f, 0.98f, 1.0f)
+
+                // Upward cone at zTop
+                val upBase = zTop - coneLen
+                addTri(cx, cy, zTop, cx - coneRad, cy - coneRad, upBase, cx + coneRad, cy - coneRad, upBase, zr, zg, zb)
+                addTri(cx, cy, zTop, cx + coneRad, cy - coneRad, upBase, cx + coneRad, cy + coneRad, upBase, zr, zg, zb)
+                addTri(cx, cy, zTop, cx + coneRad, cy + coneRad, upBase, cx - coneRad, cy + coneRad, upBase, zr, zg, zb)
+                addTri(cx, cy, zTop, cx - coneRad, cy + coneRad, upBase, cx - coneRad, cy - coneRad, upBase, zr, zg, zb)
+            }
+
+            6 -> {
+                // LAY ON FACE (Place on Face) GIZMO: Render OrcaSlicer-style translucent planar face patches on the 3D mesh
+                val candidates = obj.mesh.layOnFaceCandidates
+                for (cand in candidates) {
+                    val poly = cand.localPolygon
+                    if (poly.size < 3) continue
+                    val worldN = obj.transformNormal(cand.localNormal)
+                    // Offset slightly outward along world normal (+0.32mm) so patch sits cleanly on surface without Z-fighting
+                    val offset = worldN * 0.32f
+                    val worldCenter = obj.transformPoint(cand.localCenter).let {
+                        Vec3(it.x + offset.x, it.y + offset.y, it.z + zSnap + offset.z)
+                    }
+                    val worldPoly = poly.map { lv ->
+                        val wv = obj.transformPoint(lv)
+                        Vec3(wv.x + offset.x, wv.y + offset.y, wv.z + zSnap + offset.z)
+                    }
+
+                    // Highlight face already resting on the build plate (worldN.z < -0.98f) in bright cyan-green, others in Orca white/azure
+                    val isCurrentBase = worldN.z < -0.97f
+                    val fillR = if (isCurrentBase) 0.16f else 0.88f
+                    val fillG = if (isCurrentBase) 0.85f else 0.96f
+                    val fillB = if (isCurrentBase) 0.72f else 1.00f
+
+                    val lineR = if (isCurrentBase) 0.10f else 0.16f
+                    val lineG = if (isCurrentBase) 0.95f else 0.67f
+                    val lineB = if (isCurrentBase) 0.65f else 0.89f
+
+                    for (i in worldPoly.indices) {
+                        val v0 = worldPoly[i]
+                        val v1 = worldPoly[(i + 1) % worldPoly.size]
+                        addLine(v0.x, v0.y, v0.z, v1.x, v1.y, v1.z, lineR, lineG, lineB)
+                        addTri(
+                            worldCenter.x, worldCenter.y, worldCenter.z,
+                            v0.x, v0.y, v0.z,
+                            v1.x, v1.y, v1.z,
+                            fillR, fillG, fillB
+                        )
+                    }
+
+                    // Short outward normal indicator pin at face center
+                    val pinTip = worldCenter + (worldN * 3.2f)
+                    addLine(worldCenter.x, worldCenter.y, worldCenter.z, pinTip.x, pinTip.y, pinTip.z, lineR, lineG, lineB)
+                }
             }
         }
 
@@ -644,31 +716,25 @@ class OrcaGlRenderer(
         GLES30.glUniformMatrix4fv(uMvp, 1, false, mvpMatrix, 0)
         GLES30.glUniform1f(uShowTravel, 1.0f)
 
-        // Render gizmo on top of mesh so handles are always accessible
-        GLES30.glDisable(GLES30.GL_DEPTH_TEST)
-        val stride = 7 * 4
-
-        if (lines.isNotEmpty()) {
-            val lineArr = FloatArray(lines.size)
-            for (i in lines.indices) lineArr[i] = lines[i]
-            gizmoLineVboId = uploadFloatArrayToVbo(lineArr, gizmoLineVboId)
-            GLES30.glLineWidth(5.0f)
-            GLES30.glUniform1f(uAlpha, 0.98f)
-            GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, gizmoLineVboId)
-            GLES30.glEnableVertexAttribArray(0)
-            GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, stride, 0)
-            GLES30.glEnableVertexAttribArray(1)
-            GLES30.glVertexAttribPointer(1, 3, GLES30.GL_FLOAT, false, stride, 3 * 4)
-            GLES30.glEnableVertexAttribArray(2)
-            GLES30.glVertexAttribPointer(2, 1, GLES30.GL_FLOAT, false, stride, 6 * 4)
-            GLES30.glDrawArrays(GLES30.GL_LINES, 0, lineArr.size / 7)
+        // For Lay on Face (mode 6), keep depth test enabled so back-side patches are occluded by the 3D mesh;
+        // for Move/Scale/Rotate/Cut gizmos, disable depth test so axis handles are always accessible.
+        if (activeGizmoModeOrdinal == 6) {
+            GLES30.glEnable(GLES30.GL_DEPTH_TEST)
+            GLES30.glDepthMask(false)
+        } else {
+            GLES30.glDisable(GLES30.GL_DEPTH_TEST)
         }
+        val stride = 7 * 4
 
         if (tris.isNotEmpty()) {
             val triArr = FloatArray(tris.size)
             for (i in tris.indices) triArr[i] = tris[i]
             gizmoTriVboId = uploadFloatArrayToVbo(triArr, gizmoTriVboId)
-            val triAlpha = if (activeGizmoModeOrdinal == 3) 0.28f else 0.96f
+            val triAlpha = when (activeGizmoModeOrdinal) {
+                3 -> 0.30f
+                6 -> 0.62f
+                else -> 0.96f
+            }
             GLES30.glUniform1f(uAlpha, triAlpha)
             GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, gizmoTriVboId)
             GLES30.glEnableVertexAttribArray(0)
@@ -680,7 +746,24 @@ class OrcaGlRenderer(
             GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, triArr.size / 7)
         }
 
+        if (lines.isNotEmpty()) {
+            val lineArr = FloatArray(lines.size)
+            for (i in lines.indices) lineArr[i] = lines[i]
+            gizmoLineVboId = uploadFloatArrayToVbo(lineArr, gizmoLineVboId)
+            GLES30.glLineWidth(if (activeGizmoModeOrdinal == 6) 3.5f else 5.0f)
+            GLES30.glUniform1f(uAlpha, 0.98f)
+            GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, gizmoLineVboId)
+            GLES30.glEnableVertexAttribArray(0)
+            GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, stride, 0)
+            GLES30.glEnableVertexAttribArray(1)
+            GLES30.glVertexAttribPointer(1, 3, GLES30.GL_FLOAT, false, stride, 3 * 4)
+            GLES30.glEnableVertexAttribArray(2)
+            GLES30.glVertexAttribPointer(2, 1, GLES30.GL_FLOAT, false, stride, 6 * 4)
+            GLES30.glDrawArrays(GLES30.GL_LINES, 0, lineArr.size / 7)
+        }
+
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+        GLES30.glDepthMask(true)
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
     }
 
@@ -723,7 +806,7 @@ class OrcaGlRenderer(
      * `-1` = No gizmo hit (orbit camera as normal)
      */
     fun hitTestGizmoAxis(screenX: Float, screenY: Float): Int {
-        if (!showTransformGizmo || isPreviewMode || activeGizmoModeOrdinal !in 0..2) return -1
+        if (!showTransformGizmo || isPreviewMode || activeGizmoModeOrdinal !in 0..3) return -1
         val selId = selectedObjectId ?: return -1
         val obj = sceneObjects.firstOrNull { it.id == selId && it.visible } ?: return -1
 
@@ -732,13 +815,42 @@ class OrcaGlRenderer(
         val cx = (wb.min.x + wb.max.x) * 0.5f
         val cy = (wb.min.y + wb.max.y) * 0.5f
         val cz = ((wb.min.z + wb.max.z) * 0.5f) + zSnap
+        val bMaxZ = wb.max.z + zSnap
         val maxExtent = max(max(wb.size.x, wb.size.y), wb.size.z).coerceAtLeast(16f)
         val gizmoLen = (maxExtent * 0.85f).coerceIn(24f, 95f)
 
         val pCenter = projectWorldToScreen(cx, cy, cz) ?: return -1
         val hitThresholdPx = 56f
 
-        if (activeGizmoModeOrdinal == 0 || activeGizmoModeOrdinal == 1) {
+        if (activeGizmoModeOrdinal == 3) {
+            // Cut Plane Z-axis handle hit test
+            val cutZ = cutPlaneHeightMm.coerceIn(0.5f, (bMaxZ - 0.5f).coerceAtLeast(1f))
+            val handleLen = (gizmoLen * 0.58f).coerceIn(16f, 45f)
+            val pBot = projectWorldToScreen(cx, cy, (cutZ - handleLen).coerceAtLeast(0.2f))
+            val pTop = projectWorldToScreen(cx, cy, cutZ + handleLen)
+            if (pBot != null && pTop != null) {
+                val dHandle = distToSegment2D(screenX, screenY, pBot.first, pBot.second, pTop.first, pTop.second)
+                if (dHandle <= hitThresholdPx * 1.15f) return 2
+            }
+            // Also check if touch hits any edge of the horizontal cut plane frame
+            val pad = 10f
+            val corners = listOf(
+                projectWorldToScreen(wb.min.x - pad, wb.min.y - pad, cutZ),
+                projectWorldToScreen(wb.max.x + pad, wb.min.y - pad, cutZ),
+                projectWorldToScreen(wb.max.x + pad, wb.max.y + pad, cutZ),
+                projectWorldToScreen(wb.min.x - pad, wb.max.y + pad, cutZ)
+            )
+            for (i in 0..3) {
+                val c0 = corners[i]
+                val c1 = corners[(i + 1) % 4]
+                if (c0 != null && c1 != null) {
+                    if (distToSegment2D(screenX, screenY, c0.first, c0.second, c1.first, c1.second) <= hitThresholdPx * 0.85f) {
+                        return 2
+                    }
+                }
+            }
+            return -1
+        } else if (activeGizmoModeOrdinal == 0 || activeGizmoModeOrdinal == 1) {
             val pX = projectWorldToScreen(cx + gizmoLen, cy, cz)
             val pY = projectWorldToScreen(cx, cy + gizmoLen, cz)
             val pZ = projectWorldToScreen(cx, cy, cz + gizmoLen)
@@ -1025,6 +1137,77 @@ class OrcaGlRenderer(
             farWorld[2] / farWorld[3]
         )
         val rayDir = (rayEnd - rayOrigin).normalized()
+
+        // If LAY_ON_FACE mode (ordinal 6) is active, check if the tap hits a face patch or triangle on the selected object
+        if (activeGizmoModeOrdinal == 6 && showTransformGizmo) {
+            val selId = selectedObjectId
+            val selObj = if (selId != null) sceneObjects.firstOrNull { it.id == selId && it.visible } else null
+            if (selObj != null) {
+                val rawBounds = selObj.worldBoundingBox()
+                val zSnap = -rawBounds.min.z
+
+                // 1. Check ray-triangle intersection across all triangles of the selected object (closest hit in front of camera)
+                val snappedBounds = BoundingBox(
+                    min = Vec3(rawBounds.min.x - 2f, rawBounds.min.y - 2f, -1f),
+                    max = Vec3(rawBounds.max.x + 2f, rawBounds.max.y + 2f, rawBounds.max.z + zSnap + 2f)
+                )
+                if (snappedBounds.intersectRay(rayOrigin, rayDir) != null) {
+                    var bestTriT = Float.POSITIVE_INFINITY
+                    var bestLocalNormal: Vec3? = null
+
+                    for (localTri in selObj.mesh.triangles) {
+                        val w0 = selObj.transformPoint(localTri.v0).let { Vec3(it.x, it.y, it.z + zSnap) }
+                        val w1 = selObj.transformPoint(localTri.v1).let { Vec3(it.x, it.y, it.z + zSnap) }
+                        val w2 = selObj.transformPoint(localTri.v2).let { Vec3(it.x, it.y, it.z + zSnap) }
+                        val worldTri = com.orcaslicer.android.model.Triangle(w0, w1, w2)
+                        val tHit = worldTri.intersectRay(rayOrigin, rayDir)
+                        if (tHit != null && tHit < bestTriT) {
+                            bestTriT = tHit
+                            bestLocalNormal = localTri.normal
+                        }
+                    }
+
+                    // Snap to nearest candidate planar face if within 8 degrees so angled facets group cleanly
+                    if (bestLocalNormal != null) {
+                        val hitN = bestLocalNormal.normalized()
+                        val matchedCandidate = selObj.mesh.layOnFaceCandidates.firstOrNull {
+                            it.localNormal.dot(hitN) > 0.985f
+                        }
+                        if (matchedCandidate != null) {
+                            onLayOnFacePicked?.invoke(matchedCandidate.localNormal, matchedCandidate.label)
+                        } else {
+                            onLayOnFacePicked?.invoke(hitN, "Selected Face")
+                        }
+                        return
+                    }
+
+                    // 2. Fallback: screen-space proximity to visible front-facing candidate patch centers
+                    var bestPatchDistPx = 54f
+                    var bestCandidate: com.orcaslicer.android.model.LayOnFaceCandidate? = null
+                    for (cand in selObj.mesh.layOnFaceCandidates) {
+                        val worldN = selObj.transformNormal(cand.localNormal)
+                        // Only pick front-facing patches (facing toward camera)
+                        if (worldN.dot(rayDir) < 0.15f) {
+                            val wc = selObj.transformPoint(cand.localCenter).let { Vec3(it.x, it.y, it.z + zSnap) }
+                            val pScreen = projectWorldToScreen(wc.x, wc.y, wc.z)
+                            if (pScreen != null) {
+                                val dx = screenX - pScreen.first
+                                val dy = screenY - pScreen.second
+                                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                if (dist < bestPatchDistPx) {
+                                    bestPatchDistPx = dist
+                                    bestCandidate = cand
+                                }
+                            }
+                        }
+                    }
+                    if (bestCandidate != null) {
+                        onLayOnFacePicked?.invoke(bestCandidate.localNormal, bestCandidate.label)
+                        return
+                    }
+                }
+            }
+        }
 
         var closestId: String? = null
         var closestT = Float.POSITIVE_INFINITY

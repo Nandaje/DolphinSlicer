@@ -55,7 +55,8 @@ enum class TransformGizmoMode(val title: String) {
     ROTATE("Rotate"),
     CUT("Cut"),
     MIRROR("Mirror"),
-    MEASURE("Measure")
+    MEASURE("Measure"),
+    LAY_ON_FACE("Lay on Face")
 }
 
 enum class BuiltInPrimitiveType(val title: String) {
@@ -106,6 +107,9 @@ data class OrcaUiState(
     val sceneObjects: List<SceneObject> = emptyList(),
     val selectedObjectId: String? = null,
     val cutPlaneHeightMm: Float = 10.0f,
+    val cutKeepUpper: Boolean = true,
+    val cutKeepLower: Boolean = true,
+    val cutPlaceOnCutFace: Boolean = true,
 
     val showOverhangHighlight: Boolean = true,
     val showTravelMoves: Boolean = false,
@@ -152,15 +156,27 @@ class OrcaViewModel : ViewModel() {
     fun selectGizmoMode(mode: TransformGizmoMode) {
         _uiState.update { state ->
             val autoSelectedId = state.selectedObjectId ?: state.sceneObjects.firstOrNull()?.id
+            val selObj = state.sceneObjects.firstOrNull { it.id == autoSelectedId }
             val toggleVisible = if (state.activeGizmoMode == mode && state.showFloatingGizmoSheet) {
                 false
             } else {
                 true
             }
+            val nextCutZ = if (mode == TransformGizmoMode.CUT && selObj != null) {
+                val worldH = selObj.worldBoundingBox().size.z.coerceAtLeast(2f)
+                if (state.cutPlaneHeightMm <= 0.5f || state.cutPlaneHeightMm >= worldH - 0.5f) {
+                    (worldH * 0.5f).coerceIn(0.5f, worldH - 0.5f)
+                } else {
+                    state.cutPlaneHeightMm
+                }
+            } else {
+                state.cutPlaneHeightMm
+            }
             state.copy(
                 selectedObjectId = autoSelectedId,
                 activeGizmoMode = mode,
-                showFloatingGizmoSheet = toggleVisible
+                showFloatingGizmoSheet = toggleVisible,
+                cutPlaneHeightMm = nextCutZ
             )
         }
     }
@@ -272,7 +288,26 @@ class OrcaViewModel : ViewModel() {
     }
 
     fun updateCutPlaneHeight(heightMm: Float) {
-        _uiState.update { it.copy(cutPlaneHeightMm = heightMm.coerceIn(1f, 250f)) }
+        _uiState.update { state ->
+            val maxH = state.selectedObject?.worldBoundingBox()?.size?.z?.coerceAtLeast(2f) ?: 250f
+            state.copy(cutPlaneHeightMm = heightMm.coerceIn(0.5f, (maxH - 0.5f).coerceAtLeast(1f)))
+        }
+    }
+
+    fun updateCutOptions(
+        keepUpper: Boolean = _uiState.value.cutKeepUpper,
+        keepLower: Boolean = _uiState.value.cutKeepLower,
+        placeOnCutFace: Boolean = _uiState.value.cutPlaceOnCutFace
+    ) {
+        _uiState.update {
+            // Ensure at least one part is kept
+            val validUpper = if (!keepUpper && !keepLower) true else keepUpper
+            it.copy(
+                cutKeepUpper = validUpper,
+                cutKeepLower = keepLower,
+                cutPlaceOnCutFace = placeOnCutFace
+            )
+        }
     }
 
     fun selectPrinter(printer: PrinterProfile) {
@@ -483,7 +518,41 @@ class OrcaViewModel : ViewModel() {
                 position = obj.position.copy(z = 0f)
             )
         }
-        _uiState.update { it.copy(statusBannerMessage = "Aligned object flat on build plate (Z = 0)") }
+        _uiState.update { it.copy(statusBannerMessage = "Snapped object rotation to nearest 90° flat on build plate (Z = 0)") }
+    }
+
+    /**
+     * OrcaSlicer "Lay on Face" (Place on Face): rotates the selected object so the given local outward normal
+     * `localNormal` points straight down at the build plate `(0, 0, -1)` and snaps the face flush to `Z = 0`.
+     */
+    fun laySelectedObjectOnLocalNormal(localNormal: Vec3, faceLabel: String = "") {
+        val sel = _uiState.value.selectedObject ?: return
+        val newRot = sel.rotationToLayNormalFlat(localNormal)
+        updateSelectedObject { obj ->
+            obj.copy(
+                rotationDeg = newRot,
+                position = obj.position.copy(z = 0f)
+            )
+        }
+        val labelSuffix = if (faceLabel.isNotBlank()) " ($faceLabel)" else ""
+        _uiState.update {
+            it.copy(
+                statusBannerMessage = "Placed '${sel.name}' on selected face$labelSuffix → Rx=${newRot.x.toInt()}°, Ry=${newRot.y.toInt()}°, Rz=${newRot.z.toInt()}°"
+            )
+        }
+    }
+
+    /**
+     * Auto-orients the selected object onto its largest flat exterior face (OrcaSlicer Auto-Orient).
+     */
+    fun autoOrientSelectedObjectLargestFace() {
+        val sel = _uiState.value.selectedObject ?: return
+        val largest = sel.mesh.layOnFaceCandidates.firstOrNull()
+        if (largest != null) {
+            laySelectedObjectOnLocalNormal(largest.localNormal, "${largest.label} • ${largest.areaMm2.toInt()} mm²")
+        } else {
+            laySelectedObjectFlat()
+        }
     }
 
     fun mirrorSelectedObject(mirrorX: Boolean, mirrorY: Boolean, mirrorZ: Boolean) {
@@ -501,34 +570,64 @@ class OrcaViewModel : ViewModel() {
     fun cutSelectedObjectAtZ(cutHeightZ: Float) {
         val state = _uiState.value
         val sel = state.selectedObject ?: return
-        val maxH = sel.mesh.localBounds.size.z
-        val clampedCut = cutHeightZ.coerceIn(1.0f, (maxH - 1.0f).coerceAtLeast(1.5f))
-        val (lowerMesh, upperMesh) = ProceduralMeshes.cutMeshAtZ(sel.mesh, clampedCut)
-        if (lowerMesh.triangleCount == 0 || upperMesh.triangleCount == 0) {
+        val worldTris = sel.worldTriangles()
+        val wb = sel.worldBoundingBox()
+        val maxH = wb.size.z.coerceAtLeast(1.5f)
+        val clampedCut = cutHeightZ.coerceIn(0.5f, (maxH - 0.5f).coerceAtLeast(0.6f))
+        val (lowerMesh, upperMesh) = ProceduralMeshes.cutTrianglesAtWorldZ(worldTris, clampedCut)
+        if (lowerMesh.triangleCount == 0 && upperMesh.triangleCount == 0) {
             _uiState.update { it.copy(statusBannerMessage = "Cut plane ($clampedCut mm) is outside object height.") }
             return
         }
 
-        val lowerObj = sel.copy(
-            id = UUID.randomUUID().toString(),
-            name = "${sel.name}_lower",
-            mesh = lowerMesh,
-            position = Vec3(sel.position.x - 18f, sel.position.y, 0f)
-        ).snappedToBed()
+        val createdParts = ArrayList<SceneObject>(2)
+        val keepLower = state.cutKeepLower && lowerMesh.triangleCount > 0
+        val keepUpper = state.cutKeepUpper && upperMesh.triangleCount > 0
+        val bothKept = keepLower && keepUpper
+        val spreadX = if (bothKept) (wb.size.x * 0.6f).coerceIn(14f, 65f) else 0f
 
-        val upperObj = sel.copy(
-            id = UUID.randomUUID().toString(),
-            name = "${sel.name}_upper",
-            mesh = upperMesh,
-            position = Vec3(sel.position.x + 18f, sel.position.y, 0f)
-        ).snappedToBed()
+        if (keepLower) {
+            // If Place on Cut Face is enabled, flip the lower part 180° around X so its newly cut top face rests flat on the bed
+            val lowerRot = if (state.cutPlaceOnCutFace) Vec3(180f, 0f, 0f) else Vec3(0f, 0f, 0f)
+            val lowerObj = sel.copy(
+                id = UUID.randomUUID().toString(),
+                name = if (bothKept) "${sel.name}_lower" else "${sel.name}_cut",
+                mesh = lowerMesh,
+                rotationDeg = lowerRot,
+                scale = Vec3(1f, 1f, 1f),
+                position = Vec3(sel.position.x - spreadX, sel.position.y, 0f)
+            ).snappedToBed()
+            createdParts.add(lowerObj)
+        }
+
+        if (keepUpper) {
+            // Upper part's cut face is already at its bottom (-Z), so rotation (0,0,0) places its cut face directly on the bed
+            val upperObj = sel.copy(
+                id = UUID.randomUUID().toString(),
+                name = if (bothKept) "${sel.name}_upper" else "${sel.name}_cut",
+                mesh = upperMesh,
+                rotationDeg = Vec3(0f, 0f, 0f),
+                scale = Vec3(1f, 1f, 1f),
+                position = Vec3(sel.position.x + spreadX, sel.position.y, 0f)
+            ).snappedToBed()
+            createdParts.add(upperObj)
+        }
+
+        if (createdParts.isEmpty()) {
+            _uiState.update { it.copy(statusBannerMessage = "Cut produced no geometry at Z = ${String.format("%.1f", clampedCut)} mm.") }
+            return
+        }
+
+        val newSelected = createdParts.last()
+        val nextCutZ = (newSelected.worldBoundingBox().size.z * 0.5f).coerceAtLeast(1.0f)
 
         _uiState.update { s ->
-            val remaining = s.sceneObjects.filterNot { it.id == sel.id } + lowerObj + upperObj
+            val remaining = s.sceneObjects.filterNot { it.id == sel.id } + createdParts
             s.copy(
                 sceneObjects = remaining,
-                selectedObjectId = upperObj.id,
-                statusBannerMessage = "Cut '${sel.name}' at Z=${String.format("%.1f", clampedCut)}mm into 2 parts"
+                selectedObjectId = newSelected.id,
+                cutPlaneHeightMm = nextCutZ,
+                statusBannerMessage = "Cut '${sel.name}' at Z=${String.format("%.1f", clampedCut)}mm (${createdParts.size} part${if (createdParts.size > 1) "s" else ""} on plate)"
             )
         }
     }

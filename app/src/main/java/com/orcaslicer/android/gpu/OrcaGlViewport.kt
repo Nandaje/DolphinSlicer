@@ -26,6 +26,8 @@ class OrcaGlSurfaceView(
 
     val renderer: OrcaGlRenderer = OrcaGlRenderer(onObjectSelected)
     var onTransformSelectedObject: (((SceneObject) -> SceneObject) -> Unit)? = null
+    var onUpdateCutPlaneHeight: ((Float) -> Unit)? = null
+    var onLayOnFaceSelected: ((Vec3, String) -> Unit)? = null
     var lastHandledPresetTriggerId: Int = 0
     var lastHandledFitTriggerId: Int = 0
 
@@ -194,6 +196,13 @@ class OrcaGlSurfaceView(
                                     }
                                 }
                             }
+                            3 -> {
+                                // CUT PLANE GIZMO: Dragging the vertical Z handle moves the horizontal cut plane up and down
+                                val deltaZ = renderer.projectWorldAxisDelta(dx, dy, 0f, 0f, 1f)
+                                val nextZ = renderer.cutPlaneHeightMm + deltaZ
+                                renderer.cutPlaneHeightMm = nextZ
+                                onUpdateCutPlaneHeight?.invoke(nextZ)
+                            }
                         }
                         requestRender()
                     } else {
@@ -238,7 +247,9 @@ fun Orca3DViewport(
     showTransformGizmo: Boolean = true,
     cutPlaneHeightMm: Float = 10f,
     onObjectSelected: (String?) -> Unit,
-    onTransformSelectedObject: (((SceneObject) -> SceneObject) -> Unit)? = null
+    onTransformSelectedObject: (((SceneObject) -> SceneObject) -> Unit)? = null,
+    onUpdateCutPlaneHeight: ((Float) -> Unit)? = null,
+    onLayOnFaceSelected: ((Vec3, String) -> Unit)? = null
 ) {
     val filamentRgb = remember(filament.colorHex) {
         val r = ((filament.colorHex shr 16) and 0xFF) / 255f
@@ -252,10 +263,19 @@ fun Orca3DViewport(
         factory = { ctx ->
             OrcaGlSurfaceView(ctx, onObjectSelected).apply {
                 this.onTransformSelectedObject = onTransformSelectedObject
+                this.onUpdateCutPlaneHeight = onUpdateCutPlaneHeight
+                this.onLayOnFaceSelected = onLayOnFaceSelected
+                this.renderer.onLayOnFacePicked = { normal, label ->
+                    post {
+                        this.onLayOnFaceSelected?.invoke(normal, label)
+                    }
+                }
             }
         },
         update = { view ->
             view.onTransformSelectedObject = onTransformSelectedObject
+            view.onUpdateCutPlaneHeight = onUpdateCutPlaneHeight
+            view.onLayOnFaceSelected = onLayOnFaceSelected
             val r = view.renderer
             r.sceneObjects = objects
             r.selectedObjectId = selectedObjectId

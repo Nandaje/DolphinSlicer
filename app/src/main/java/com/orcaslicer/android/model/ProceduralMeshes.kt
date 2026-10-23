@@ -250,32 +250,119 @@ object ProceduralMeshes {
     }
 
     /**
-     * Splits a mesh horizontally at `cutHeightZ` into (lowerPart, upperPart).
+     * Splits a mesh horizontally at `cutHeightZ` into (lowerPart, upperPart) using exact plane clipping
+     * and planar cross-section capping.
      */
-    fun cutMeshAtZ(mesh: MeshData, cutHeightZ: Float): Pair<MeshData, MeshData> {
-        val lowerTris = ArrayList<Triangle>()
-        val upperTris = ArrayList<Triangle>()
+    fun cutMeshAtZ(mesh: MeshData, cutHeightZ: Float): Pair<MeshData, MeshData> =
+        cutTrianglesAtWorldZ(mesh.triangles, cutHeightZ)
 
-        for (t in mesh.triangles) {
-            val avgZ = (t.v0.z + t.v1.z + t.v2.z) / 3f
-            if (avgZ <= cutHeightZ) {
-                lowerTris.add(
-                    Triangle(
-                        Vec3(t.v0.x, t.v0.y, min(t.v0.z, cutHeightZ)),
-                        Vec3(t.v1.x, t.v1.y, min(t.v1.z, cutHeightZ)),
-                        Vec3(t.v2.x, t.v2.y, min(t.v2.z, cutHeightZ))
-                    )
-                )
+    /**
+     * Clips a list of triangles along the horizontal plane `Z = cutHeightZ`, splitting straddling triangles
+     * with exact linear edge interpolation and capping the cut cross-section on both the lower and upper solids.
+     */
+    fun cutTrianglesAtWorldZ(triangles: List<Triangle>, cutHeightZ: Float): Pair<MeshData, MeshData> {
+        val lowerTris = ArrayList<Triangle>(triangles.size)
+        val upperTris = ArrayList<Triangle>(triangles.size)
+        val cutSegments = ArrayList<Pair<Vec3, Vec3>>()
+
+        fun interpZ(a: Vec3, b: Vec3): Vec3 {
+            val dz = b.z - a.z
+            if (kotlin.math.abs(dz) < 1e-7f) return Vec3(a.x, a.y, cutHeightZ)
+            val t = ((cutHeightZ - a.z) / dz).coerceIn(0f, 1f)
+            return Vec3(
+                x = a.x + (b.x - a.x) * t,
+                y = a.y + (b.y - a.y) * t,
+                z = cutHeightZ
+            )
+        }
+
+        val eps = 1e-5f
+        for (tri in triangles) {
+            val v0 = tri.v0
+            val v1 = tri.v1
+            val v2 = tri.v2
+            val u0 = v0.z > cutHeightZ + eps
+            val u1 = v1.z > cutHeightZ + eps
+            val u2 = v2.z > cutHeightZ + eps
+            val l0 = v0.z < cutHeightZ - eps
+            val l1 = v1.z < cutHeightZ - eps
+            val l2 = v2.z < cutHeightZ - eps
+
+            if (!u0 && !u1 && !u2) {
+                lowerTris.add(tri)
+            } else if (!l0 && !l1 && !l2) {
+                upperTris.add(tri)
             } else {
-                upperTris.add(
-                    Triangle(
-                        Vec3(t.v0.x, t.v0.y, max(t.v0.z, cutHeightZ) - cutHeightZ),
-                        Vec3(t.v1.x, t.v1.y, max(t.v1.z, cutHeightZ) - cutHeightZ),
-                        Vec3(t.v2.x, t.v2.y, max(t.v2.z, cutHeightZ) - cutHeightZ)
-                    )
-                )
+                // Straddling triangle: rotate cyclic order (a, b, c) so `a` is the lone vertex on one side of cutHeightZ
+                val a: Vec3
+                val b: Vec3
+                val c: Vec3
+                val aIsAbove: Boolean
+                val aboveCount = (if (v0.z > cutHeightZ) 1 else 0) +
+                    (if (v1.z > cutHeightZ) 1 else 0) +
+                    (if (v2.z > cutHeightZ) 1 else 0)
+
+                if (aboveCount == 1) {
+                    aIsAbove = true
+                    when {
+                        v0.z > cutHeightZ -> { a = v0; b = v1; c = v2 }
+                        v1.z > cutHeightZ -> { a = v1; b = v2; c = v0 }
+                        else -> { a = v2; b = v0; c = v1 }
+                    }
+                } else {
+                    aIsAbove = false
+                    when {
+                        v0.z <= cutHeightZ -> { a = v0; b = v1; c = v2 }
+                        v1.z <= cutHeightZ -> { a = v1; b = v2; c = v0 }
+                        else -> { a = v2; b = v0; c = v1 }
+                    }
+                }
+
+                val pab = interpZ(a, b)
+                val pac = interpZ(a, c)
+
+                val loneTri = Triangle(a, pab, pac)
+                val quadTri1 = Triangle(pab, b, c)
+                val quadTri2 = Triangle(pab, c, pac)
+
+                if (aIsAbove) {
+                    upperTris.add(loneTri)
+                    lowerTris.add(quadTri1)
+                    lowerTris.add(quadTri2)
+                    if (pab.distanceTo(pac) > 1e-4f) {
+                        cutSegments.add(pab to pac)
+                    }
+                } else {
+                    lowerTris.add(loneTri)
+                    upperTris.add(quadTri1)
+                    upperTris.add(quadTri2)
+                    if (pab.distanceTo(pac) > 1e-4f) {
+                        cutSegments.add(pac to pab)
+                    }
+                }
             }
         }
+
+        // Cap the cut plane cross-section so both lower and upper halves have solid flat faces at Z = cutHeightZ
+        if (cutSegments.size >= 3) {
+            var cx = 0f
+            var cy = 0f
+            for ((s0, s1) in cutSegments) {
+                cx += (s0.x + s1.x) * 0.5f
+                cy += (s0.y + s1.y) * 0.5f
+            }
+            cx /= cutSegments.size
+            cy /= cutSegments.size
+            val capCenter = Vec3(cx, cy, cutHeightZ)
+            val upNormal = Vec3(0f, 0f, 1f)
+            val downNormal = Vec3(0f, 0f, -1f)
+
+            for ((s0, s1) in cutSegments) {
+                lowerTris.add(Triangle(capCenter, s0, s1, upNormal))
+                upperTris.add(Triangle(capCenter, s1, s0, downNormal))
+            }
+        }
+
         return MeshData.fromRawTriangles(lowerTris) to MeshData.fromRawTriangles(upperTris)
     }
 
