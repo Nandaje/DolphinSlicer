@@ -150,10 +150,17 @@ class OrcaViewModel : ViewModel() {
     }
 
     fun selectGizmoMode(mode: TransformGizmoMode) {
-        _uiState.update {
-            it.copy(
+        _uiState.update { state ->
+            val autoSelectedId = state.selectedObjectId ?: state.sceneObjects.firstOrNull()?.id
+            val toggleVisible = if (state.activeGizmoMode == mode && state.showFloatingGizmoSheet) {
+                false
+            } else {
+                true
+            }
+            state.copy(
+                selectedObjectId = autoSelectedId,
                 activeGizmoMode = mode,
-                showFloatingGizmoSheet = true
+                showFloatingGizmoSheet = toggleVisible
             )
         }
     }

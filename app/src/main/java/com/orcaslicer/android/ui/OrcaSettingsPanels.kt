@@ -123,23 +123,24 @@ import com.orcaslicer.android.model.WipeTowerWallType
 import com.orcaslicer.android.model.ZHopType
 import java.util.Locale
 
-// DolphinSlicer Dark Charcoal Palette (matching mobile_3d_slicer_ui.html) with Dolphin Logo Azure Blue (#29ABE2) Accent
-internal val OrcaTeal = Color(0xFF1D88B8)
-internal val OrcaTealBright = Color(0xFF29ABE2)
-internal val OrcaTopBarBg = Color(0xFF16171B)      // charcoal-900
-internal val OrcaDarkBg = Color(0xFF101114)        // charcoal-950
-internal val OrcaPanelBg = Color(0xFF16171B)       // charcoal-900
-internal val OrcaCardBg = Color(0xFF1C1E23)        // charcoal-850
-internal val OrcaInputBg = Color(0xFF22242A)       // charcoal-800
-internal val OrcaElevatedBg = Color(0xFF2A2D35)    // charcoal-750
-internal val OrcaBorder = Color(0xFF323640)        // charcoal-700
-internal val OrcaDivider = Color(0xFF2A2D35)       // charcoal-750
-internal val OrcaTextPrimary = Color(0xFFE2E8F0)   // slate-200
-internal val OrcaTextSecondary = Color(0xFF94A3B8) // slate-400
-internal val OrcaUnitText = Color(0xFF64748B)      // slate-500
+// Lumos Dark Obsidian + Acid Chartreuse-Lime (#B8E900) + Crimson (#E53935) Palette (matching reference screenshot)
+internal val OrcaTeal = Color(0xFF96C400)          // Rich Acid Lime
+internal val OrcaTealBright = Color(0xFFB8E900)    // Electric Chartreuse / Lime-Yellow
+internal val LumosCrimson = Color(0xFFE53935)      // Crimson Red secondary accent (dropdown chevrons & active rings)
+internal val OrcaTopBarBg = Color(0xFF0A0B0A)      // Obsidian top bar
+internal val OrcaDarkBg = Color(0xFF060706)        // Pitch-black workspace background
+internal val OrcaPanelBg = Color(0xFF0A0B0A)       // Obsidian panel background
+internal val OrcaCardBg = Color(0xFF161816)        // Dark charcoal card/section container
+internal val OrcaInputBg = Color(0xFF282A28)       // Matte charcoal input boxes & buttons ([ 16 ], [ 64 ], [ 0 m ])
+internal val OrcaElevatedBg = Color(0xFF2E312E)    // Section header bars (> Sampling, > Visibility, > Instancing)
+internal val OrcaBorder = Color(0xFF3A3D3A)        // Subtle charcoal border
+internal val OrcaDivider = Color(0xFF222422)       // Subtle divider
+internal val OrcaTextPrimary = Color(0xFFE6EAE6)   // Crisp light grey/white text
+internal val OrcaTextSecondary = Color(0xFFA4D400) // Lumos Lime-Yellow parameter label accent
+internal val OrcaUnitText = Color(0xFF8C928C)      // Muted grey unit text
 
 /**
- * 1:1 OrcaSlicer Section Header with Left Icon, Bold Title, and Horizontal Divider Line extending right.
+ * Lumos-style Section Header Bar (`> Sampling`, `> Visibility`, `> Instancing` in reference screenshot)
  */
 @Composable
 fun OrcaSectionGroupHeader(
@@ -149,37 +150,40 @@ fun OrcaSectionGroupHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 6.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(top = 5.dp, bottom = 2.dp)
+            .clip(RoundedCornerShape(5.dp))
+            .background(OrcaElevatedBg)
+            .border(1.dp, OrcaBorder, RoundedCornerShape(5.dp))
+            .padding(horizontal = 8.dp, vertical = 4.5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Box(
-            modifier = Modifier
-                .size(14.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(Color(0xFF163242))
-                .border(1.dp, OrcaTealBright.copy(alpha = 0.7f), RoundedCornerShape(3.dp)),
-            contentAlignment = Alignment.Center
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                tint = OrcaTextPrimary,
+                modifier = Modifier.size(13.dp)
+            )
+            Spacer(Modifier.width(4.dp))
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = OrcaTealBright,
-                modifier = Modifier.size(9.dp)
+                modifier = Modifier.size(12.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = title,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = OrcaTextPrimary
             )
         }
-        Spacer(Modifier.width(5.dp))
         Text(
-            text = title,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = OrcaTextPrimary
-        )
-        Spacer(Modifier.width(6.dp))
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(1.dp)
-                .background(OrcaDivider)
+            text = "⋮⋮",
+            fontSize = 10.sp,
+            color = OrcaUnitText
         )
     }
 }
@@ -233,8 +237,8 @@ fun OrcaParamNumberRow(
             Text(
                 text = label,
                 fontSize = 11.sp,
-                fontWeight = if (boldLabel) FontWeight.Bold else FontWeight.Normal,
-                color = if (!enabled) OrcaUnitText else if (boldLabel) Color.White else OrcaTextPrimary,
+                fontWeight = if (boldLabel) FontWeight.Bold else FontWeight.Medium,
+                color = if (!enabled) OrcaUnitText else if (boldLabel) OrcaTealBright else OrcaTextSecondary,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
@@ -466,7 +470,8 @@ fun OrcaParamCheckboxRow(
         Text(
             text = label,
             fontSize = 11.sp,
-            color = OrcaTextPrimary,
+            fontWeight = FontWeight.Medium,
+            color = if (checked) OrcaTealBright else OrcaTextPrimary,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
@@ -479,10 +484,10 @@ fun OrcaParamCheckboxRow(
                 modifier = Modifier
                     .size(15.dp)
                     .clip(RoundedCornerShape(3.dp))
-                    .background(if (checked) OrcaTeal else OrcaInputBg)
+                    .background(if (checked) OrcaTealBright else OrcaInputBg)
                     .border(
                         width = 1.dp,
-                        color = if (checked) OrcaTealBright else Color(0xFF52555A),
+                        color = if (checked) OrcaTealBright else Color(0xFF4A4E4A),
                         shape = RoundedCornerShape(3.dp)
                     ),
                 contentAlignment = Alignment.Center
@@ -491,7 +496,7 @@ fun OrcaParamCheckboxRow(
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = Color(0xFF070900),
                         modifier = Modifier.size(11.dp)
                     )
                 }
@@ -501,7 +506,7 @@ fun OrcaParamCheckboxRow(
 }
 
 /**
- * 1:1 OrcaSlicer Dropdown Parameter Row (`Seam position [ v Aligned ]`, `Scarf joint seam (beta) [ v None ]`).
+ * Lumos-style Dropdown Parameter Row (`Render Engine [ EEVEE   v ]` with Crimson Red arrow on right).
  */
 @Composable
 fun <T> OrcaParamDropdownRow(
@@ -521,7 +526,8 @@ fun <T> OrcaParamDropdownRow(
         Text(
             text = label,
             fontSize = 11.sp,
-            color = OrcaTextPrimary,
+            fontWeight = FontWeight.Medium,
+            color = OrcaTextSecondary,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
@@ -540,20 +546,21 @@ fun <T> OrcaParamDropdownRow(
                     .clickable { expanded = true }
                     .padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = OrcaTextSecondary,
-                    modifier = Modifier.size(13.dp)
-                )
                 Text(
                     text = optionLabel(selected),
                     fontSize = 11.sp,
                     color = OrcaTextPrimary,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = LumosCrimson,
+                    modifier = Modifier.size(13.dp)
                 )
             }
 

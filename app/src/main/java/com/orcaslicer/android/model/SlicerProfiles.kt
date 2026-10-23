@@ -756,7 +756,13 @@ class SliceResult(
                     val dx = seg.end.x - seg.start.x
                     val dy = seg.end.y - seg.start.y
                     val len = kotlin.math.sqrt(dx * dx + dy * dy)
-                    val halfW = (seg.widthMm.coerceIn(0.20f, 1.20f)) * 0.50f
+                    val visualStrokeScale = when (t) {
+                        ToolpathType.OUTER_WALL -> 1.85f
+                        ToolpathType.INNER_WALL -> 1.65f
+                        ToolpathType.SKIRT_BRIM -> 1.50f
+                        else -> 1.25f
+                    }
+                    val halfW = (seg.widthMm.coerceIn(0.24f, 1.40f) * visualStrokeScale) * 0.50f
                     val nx = if (len > 1e-5f) (-dy / len) * halfW else 0f
                     val ny = if (len > 1e-5f) (dx / len) * halfW else halfW
                     val z = seg.start.z

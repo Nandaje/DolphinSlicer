@@ -44,9 +44,15 @@ class OrcaGlRenderer(
     @Volatile var sceneObjects: List<SceneObject> = emptyList()
     @Volatile var selectedObjectId: String? = null
     @Volatile var printerProfile: PrinterProfile? = null
-    @Volatile var filamentColorRgb: FloatArray = floatArrayOf(0.0f, 0.78f, 0.59f)
+    @Volatile var filamentColorRgb: FloatArray = floatArrayOf(0.72f, 0.91f, 0.0f)
     @Volatile var showOverhangHighlight: Boolean = true
     @Volatile var overhangThresholdDeg: Int = 45
+
+    // 3D Transform Gizmo state (0=MOVE, 1=SCALE, 2=ROTATE, 3=CUT, 4=MIRROR, 5=MEASURE, -1=HIDDEN)
+    @Volatile var activeGizmoModeOrdinal: Int = 0
+    @Volatile var showTransformGizmo: Boolean = true
+    @Volatile var activeDraggedAxis: Int = -1 // -1=none, 0=X, 1=Y, 2=Z, 3=XY/Uniform
+    @Volatile var cutPlaneHeightMm: Float = 10f
 
     // Preview mode toolpath state
     @Volatile var isPreviewMode: Boolean = false
@@ -84,10 +90,12 @@ class OrcaGlRenderer(
     private var cachedSliceResult: SliceResult? = null
     private var toolpathVboId: Int = 0
     private var toolpathRibbonVboId: Int = 0
+    private var gizmoLineVboId: Int = 0
+    private var gizmoTriVboId: Int = 0
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        // Dark studio viewport background (#0E0F12) matching mobile_3d_slicer_ui.html
-        GLES30.glClearColor(0.055f, 0.059f, 0.071f, 1.0f)
+        // Lumos dark graphite viewport background (#151615) matching reference screenshot
+        GLES30.glClearColor(0.082f, 0.086f, 0.082f, 1.0f)
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
         GLES30.glDepthFunc(GLES30.GL_LEQUAL)
         GLES30.glEnable(GLES30.GL_BLEND)
@@ -100,6 +108,8 @@ class OrcaGlRenderer(
         plateQuadVboId = 0
         toolpathVboId = 0
         toolpathRibbonVboId = 0
+        gizmoLineVboId = 0
+        gizmoTriVboId = 0
 
         meshProgram = createShaderProgram(MESH_VERTEX_SHADER, MESH_FRAGMENT_SHADER)
         lineProgram = createShaderProgram(LINE_VERTEX_SHADER, LINE_FRAGMENT_SHADER)
@@ -129,10 +139,10 @@ class OrcaGlRenderer(
         // 2. Draw either 3D Models (Prepare mode) or GPU Toolpaths (Preview mode)
         val activeSlice = sliceResult
         if (isPreviewMode && activeSlice != null && activeSlice.layers.isNotEmpty()) {
-            // Draw ghosted silhouette of models at low alpha or draw toolpaths directly
             drawToolpaths(activeSlice)
         } else {
             drawSceneMeshes(bedW, bedD, maxH)
+            drawSelectedObjectGizmo()
         }
     }
 
@@ -206,16 +216,16 @@ class OrcaGlRenderer(
         val hw = bedW * 0.5f
         val hd = bedD * 0.5f
 
-        // Textured PEI Build Plate dark charcoal surface (#181A20) at Z = -0.08
+        // Lumos dark graphite PEI Build Plate surface (#191B19) at Z = -0.08
         val zPlate = -0.08f
-        val pr = 0.094f; val pg = 0.102f; val pb = 0.125f
+        val pr = 0.098f; val pg = 0.106f; val pb = 0.098f
         val quadFloats = floatArrayOf(
             -hw, -hd, zPlate, pr, pg, pb, 0f,
              hw, -hd, zPlate, pr, pg, pb, 0f,
-             hw,  hd, zPlate, pr + 0.018f, pg + 0.020f, pb + 0.024f, 0f,
+             hw,  hd, zPlate, pr + 0.016f, pg + 0.018f, pb + 0.016f, 0f,
             -hw, -hd, zPlate, pr, pg, pb, 0f,
-             hw,  hd, zPlate, pr + 0.018f, pg + 0.020f, pb + 0.024f, 0f,
-            -hw,  hd, zPlate, pr + 0.012f, pg + 0.014f, pb + 0.018f, 0f
+             hw,  hd, zPlate, pr + 0.016f, pg + 0.018f, pb + 0.016f, 0f,
+            -hw,  hd, zPlate, pr + 0.012f, pg + 0.014f, pb + 0.012f, 0f
         )
         plateQuadVboId = uploadFloatArrayToVbo(quadFloats, plateQuadVboId)
 
@@ -229,11 +239,14 @@ class OrcaGlRenderer(
         var x = -hw
         var idxX = 0
         while (x <= hw + 0.01f) {
+            val isCenter = kotlin.math.abs(x) < 0.01f
             val isMajor = (idxX % 5 == 0)
-            if (isMajor) {
-                addLine(x, -hd, 0f, x, hd, 0f, 0.14f, 0.34f, 0.46f)
+            if (isCenter) {
+                addLine(x, -hd, 0.01f, x, hd, 0.01f, 0.52f, 0.68f, 0.05f) // Y center line (Lime)
+            } else if (isMajor) {
+                addLine(x, -hd, 0f, x, hd, 0f, 0.25f, 0.27f, 0.25f)
             } else {
-                addLine(x, -hd, 0f, x, hd, 0f, 0.145f, 0.157f, 0.196f)
+                addLine(x, -hd, 0f, x, hd, 0f, 0.16f, 0.17f, 0.16f)
             }
             x += step
             idxX++
@@ -242,34 +255,37 @@ class OrcaGlRenderer(
         var y = -hd
         var idxY = 0
         while (y <= hd + 0.01f) {
+            val isCenter = kotlin.math.abs(y) < 0.01f
             val isMajor = (idxY % 5 == 0)
-            if (isMajor) {
-                addLine(-hw, y, 0f, hw, y, 0f, 0.14f, 0.34f, 0.46f)
+            if (isCenter) {
+                addLine(-hw, y, 0.01f, hw, y, 0.01f, 0.72f, 0.20f, 0.24f) // X center line (Crimson)
+            } else if (isMajor) {
+                addLine(-hw, y, 0f, hw, y, 0f, 0.25f, 0.27f, 0.25f)
             } else {
-                addLine(-hw, y, 0f, hw, y, 0f, 0.145f, 0.157f, 0.196f)
+                addLine(-hw, y, 0f, hw, y, 0f, 0.16f, 0.17f, 0.16f)
             }
             y += step
             idxY++
         }
 
-        // Build Boundary Perimeter Line (Dolphin Blue/Teal accent)
-        addLine(-hw, -hd, 0.03f,  hw, -hd, 0.03f, 0.16f, 0.67f, 0.89f)
-        addLine( hw, -hd, 0.03f,  hw,  hd, 0.03f, 0.16f, 0.67f, 0.89f)
-        addLine( hw,  hd, 0.03f, -hw,  hd, 0.03f, 0.16f, 0.67f, 0.89f)
-        addLine(-hw,  hd, 0.03f, -hw, -hd, 0.03f, 0.16f, 0.67f, 0.89f)
+        // Build Boundary Perimeter Line (Lumos Acid Lime accent #B8E900)
+        addLine(-hw, -hd, 0.03f,  hw, -hd, 0.03f, 0.72f, 0.91f, 0.0f)
+        addLine( hw, -hd, 0.03f,  hw,  hd, 0.03f, 0.72f, 0.91f, 0.0f)
+        addLine( hw,  hd, 0.03f, -hw,  hd, 0.03f, 0.72f, 0.91f, 0.0f)
+        addLine(-hw,  hd, 0.03f, -hw, -hd, 0.03f, 0.72f, 0.91f, 0.0f)
 
         // Coordinate Axes at front-left corner (-hw, -hd)
         val axisLen = 35f
-        addLine(-hw, -hd, 0.05f, -hw + axisLen, -hd, 0.05f, 0.95f, 0.26f, 0.26f) // X Red
-        addLine(-hw, -hd, 0.05f, -hw, -hd + axisLen, 0.05f, 0.26f, 0.88f, 0.40f) // Y Green
-        addLine(-hw, -hd, 0.05f, -hw, -hd, axisLen, 0.28f, 0.62f, 0.98f)         // Z Blue
+        addLine(-hw, -hd, 0.05f, -hw + axisLen, -hd, 0.05f, 0.92f, 0.22f, 0.27f) // X Crimson Red
+        addLine(-hw, -hd, 0.05f, -hw, -hd + axisLen, 0.05f, 0.72f, 0.91f, 0.00f) // Y Acid Lime
+        addLine(-hw, -hd, 0.05f, -hw, -hd, axisLen, 0.18f, 0.72f, 0.68f)         // Z Cyan-Teal
 
         // Build volume wireframe box
-        val bc = 0.19f
-        addLine(-hw, -hd, maxH, hw, -hd, maxH, bc, bc, bc + 0.03f)
-        addLine(hw, -hd, maxH, hw, hd, maxH, bc, bc, bc + 0.03f)
-        addLine(hw, hd, maxH, -hw, hd, maxH, bc, bc, bc + 0.03f)
-        addLine(-hw, hd, maxH, -hw, -hd, maxH, bc, bc, bc + 0.03f)
+        val bc = 0.20f
+        addLine(-hw, -hd, maxH, hw, -hd, maxH, bc, bc + 0.02f, bc)
+        addLine(hw, -hd, maxH, hw, hd, maxH, bc, bc + 0.02f, bc)
+        addLine(hw, hd, maxH, -hw, hd, maxH, bc, bc + 0.02f, bc)
+        addLine(-hw, hd, maxH, -hw, -hd, maxH, bc, bc + 0.02f, bc)
 
         addLine(-hw, -hd, 0f, -hw, -hd, maxH, bc, bc, bc)
         addLine(hw, -hd, 0f, hw, -hd, maxH, bc, bc, bc)
@@ -394,8 +410,8 @@ class OrcaGlRenderer(
             }
         }
 
-        // 2. Draw travel lines (or centerline overlay when travel is enabled)
-        if (showTravelMoves && toolpathVboId != 0) {
+        // 2. Always draw thick GL_LINES stroke overlay so walls & extrusions have bold stroke weight from all camera angles
+        if (toolpathVboId != 0) {
             GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, toolpathVboId)
             GLES30.glEnableVertexAttribArray(0)
             GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, stride, 0)
@@ -404,18 +420,386 @@ class OrcaGlRenderer(
             GLES30.glEnableVertexAttribArray(2)
             GLES30.glVertexAttribPointer(2, 1, GLES30.GL_FLOAT, false, stride, 6 * 4)
 
+            GLES30.glLineWidth(4.5f)
+            if (maxL > minL) {
+                val startVert = slice.layerStartVertexIndex[minL]
+                val endLayer = maxL - 1
+                val totalVerts = (slice.layerStartVertexIndex[endLayer] + slice.layerVertexCount[endLayer]) - startVert
+                if (totalVerts > 0) {
+                    GLES30.glUniform1f(uAlpha, 0.94f)
+                    GLES30.glDrawArrays(GLES30.GL_LINES, startVert, totalVerts)
+                }
+            }
+
             val topStartVert = slice.layerStartVertexIndex[maxL]
             val fullTopVerts = slice.layerVertexCount[maxL]
             val scrubbedSegments = ((fullTopVerts / 2) * activeLayerProgress.coerceIn(0.01f, 1.0f)).toInt().coerceAtLeast(1)
             val scrubbedVerts = min(fullTopVerts, scrubbedSegments * 2)
             if (scrubbedVerts > 0) {
-                GLES30.glLineWidth(2.0f)
-                GLES30.glUniform1f(uAlpha, 0.85f)
+                GLES30.glLineWidth(5.0f)
+                GLES30.glUniform1f(uAlpha, 1.0f)
                 GLES30.glDrawArrays(GLES30.GL_LINES, topStartVert, scrubbedVerts)
             }
         }
 
         GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+    }
+
+    /**
+     * Renders an interactive 3D Transform Gizmo (Move arrows + cones, Rotate orbital rings,
+     * Scale axis cubes, or Cut plane) directly on the selected object.
+     */
+    private fun drawSelectedObjectGizmo() {
+        if (!showTransformGizmo || isPreviewMode) return
+        val selId = selectedObjectId ?: return
+        val obj = sceneObjects.firstOrNull { it.id == selId && it.visible } ?: return
+
+        val wb = obj.worldBoundingBox()
+        val zSnap = -wb.min.z
+        val cx = (wb.min.x + wb.max.x) * 0.5f
+        val cy = (wb.min.y + wb.max.y) * 0.5f
+        val cz = ((wb.min.z + wb.max.z) * 0.5f) + zSnap
+        val maxExtent = max(max(wb.size.x, wb.size.y), wb.size.z).coerceAtLeast(16f)
+        val gizmoLen = (maxExtent * 0.85f).coerceIn(24f, 95f)
+
+        val lines = ArrayList<Float>(1024)
+        val tris = ArrayList<Float>(1024)
+
+        fun addLine(x0: Float, y0: Float, z0: Float, x1: Float, y1: Float, z1: Float, r: Float, g: Float, b: Float) {
+            lines.add(x0); lines.add(y0); lines.add(z0); lines.add(r); lines.add(g); lines.add(b); lines.add(0f)
+            lines.add(x1); lines.add(y1); lines.add(z1); lines.add(r); lines.add(g); lines.add(b); lines.add(0f)
+        }
+
+        fun addTri(
+            x0: Float, y0: Float, z0: Float,
+            x1: Float, y1: Float, z1: Float,
+            x2: Float, y2: Float, z2: Float,
+            r: Float, g: Float, b: Float
+        ) {
+            tris.add(x0); tris.add(y0); tris.add(z0); tris.add(r); tris.add(g); tris.add(b); tris.add(0f)
+            tris.add(x1); tris.add(y1); tris.add(z1); tris.add(r); tris.add(g); tris.add(b); tris.add(0f)
+            tris.add(x2); tris.add(y2); tris.add(z2); tris.add(r); tris.add(g); tris.add(b); tris.add(0f)
+        }
+
+        fun addCubeHandle(hx: Float, hy: Float, hz: Float, half: Float, r: Float, g: Float, b: Float) {
+            val x0 = hx - half; val x1 = hx + half
+            val y0 = hy - half; val y1 = hy + half
+            val z0 = hz - half; val z1 = hz + half
+            // Top & Bottom
+            addTri(x0, y0, z1, x1, y0, z1, x1, y1, z1, r, g, b)
+            addTri(x0, y0, z1, x1, y1, z1, x0, y1, z1, r, g, b)
+            addTri(x0, y1, z0, x1, y1, z0, x1, y0, z0, r * 0.8f, g * 0.8f, b * 0.8f)
+            addTri(x0, y1, z0, x1, y0, z0, x0, y0, z0, r * 0.8f, g * 0.8f, b * 0.8f)
+            // Front & Back
+            addTri(x0, y0, z0, x1, y0, z0, x1, y0, z1, r * 0.9f, g * 0.9f, b * 0.9f)
+            addTri(x0, y0, z0, x1, y0, z1, x0, y0, z1, r * 0.9f, g * 0.9f, b * 0.9f)
+            addTri(x1, y1, z0, x0, y1, z0, x0, y1, z1, r * 0.9f, g * 0.9f, b * 0.9f)
+            addTri(x1, y1, z0, x0, y1, z1, x1, y1, z1, r * 0.9f, g * 0.9f, b * 0.9f)
+            // Left & Right
+            addTri(x0, y1, z0, x0, y0, z0, x0, y0, z1, r * 0.85f, g * 0.85f, b * 0.85f)
+            addTri(x0, y1, z0, x0, y0, z1, x0, y1, z1, r * 0.85f, g * 0.85f, b * 0.85f)
+            addTri(x1, y0, z0, x1, y1, z0, x1, y1, z1, r * 0.95f, g * 0.95f, b * 0.95f)
+            addTri(x1, y0, z0, x1, y1, z1, x1, y0, z1, r * 0.95f, g * 0.95f, b * 0.95f)
+        }
+
+        // Axis colors (brightened to white-yellow when actively dragged)
+        val xr = if (activeDraggedAxis == 0) 1.0f else 0.95f
+        val xg = if (activeDraggedAxis == 0) 0.95f else 0.22f
+        val xb = if (activeDraggedAxis == 0) 0.20f else 0.28f
+
+        val yr = if (activeDraggedAxis == 1) 1.0f else 0.72f
+        val yg = if (activeDraggedAxis == 1) 0.98f else 0.91f
+        val yb = if (activeDraggedAxis == 1) 0.35f else 0.00f
+
+        val zr = if (activeDraggedAxis == 2) 1.0f else 0.16f
+        val zg = if (activeDraggedAxis == 2) 0.95f else 0.76f
+        val zb = if (activeDraggedAxis == 2) 0.25f else 0.96f
+
+        // Subtle selection bounding box wireframe
+        val bMinX = wb.min.x; val bMaxX = wb.max.x
+        val bMinY = wb.min.y; val bMaxY = wb.max.y
+        val bMinZ = 0f;       val bMaxZ = wb.max.z + zSnap
+        addLine(bMinX, bMinY, bMinZ, bMaxX, bMinY, bMinZ, 0.72f, 0.91f, 0.0f)
+        addLine(bMaxX, bMinY, bMinZ, bMaxX, bMaxY, bMinZ, 0.72f, 0.91f, 0.0f)
+        addLine(bMaxX, bMaxY, bMinZ, bMinX, bMaxY, bMinZ, 0.72f, 0.91f, 0.0f)
+        addLine(bMinX, bMaxY, bMinZ, bMinX, bMinY, bMinZ, 0.72f, 0.91f, 0.0f)
+
+        when (activeGizmoModeOrdinal) {
+            0 -> {
+                // MOVE GIZMO: X (Red), Y (Lime), Z (Cyan) shafts + 3D arrowhead pyramids + XY plane handle
+                val coneLen = (gizmoLen * 0.22f).coerceIn(5f, 16f)
+                val coneRad = coneLen * 0.38f
+
+                // X shaft + pyramid tip
+                addLine(cx, cy, cz, cx + gizmoLen, cy, cz, xr, xg, xb)
+                val xBase = cx + gizmoLen - coneLen
+                val xTip = cx + gizmoLen
+                addTri(xTip, cy, cz, xBase, cy - coneRad, cz - coneRad, xBase, cy + coneRad, cz - coneRad, xr, xg, xb)
+                addTri(xTip, cy, cz, xBase, cy + coneRad, cz - coneRad, xBase, cy + coneRad, cz + coneRad, xr, xg, xb)
+                addTri(xTip, cy, cz, xBase, cy + coneRad, cz + coneRad, xBase, cy - coneRad, cz + coneRad, xr, xg, xb)
+                addTri(xTip, cy, cz, xBase, cy - coneRad, cz + coneRad, xBase, cy - coneRad, cz - coneRad, xr, xg, xb)
+
+                // Y shaft + pyramid tip
+                addLine(cx, cy, cz, cx, cy + gizmoLen, cz, yr, yg, yb)
+                val yBase = cy + gizmoLen - coneLen
+                val yTip = cy + gizmoLen
+                addTri(cx, yTip, cz, cx - coneRad, yBase, cz - coneRad, cx + coneRad, yBase, cz - coneRad, yr, yg, yb)
+                addTri(cx, yTip, cz, cx + coneRad, yBase, cz - coneRad, cx + coneRad, yBase, cz + coneRad, yr, yg, yb)
+                addTri(cx, yTip, cz, cx + coneRad, yBase, cz + coneRad, cx - coneRad, yBase, cz + coneRad, yr, yg, yb)
+                addTri(cx, yTip, cz, cx - coneRad, yBase, cz + coneRad, cx - coneRad, yBase, cz - coneRad, yr, yg, yb)
+
+                // Z shaft + pyramid tip
+                addLine(cx, cy, cz, cx, cy, cz + gizmoLen, zr, zg, zb)
+                val zBase = cz + gizmoLen - coneLen
+                val zTip = cz + gizmoLen
+                addTri(cx, cy, zTip, cx - coneRad, cy - coneRad, zBase, cx + coneRad, cy - coneRad, zBase, zr, zg, zb)
+                addTri(cx, cy, zTip, cx + coneRad, cy - coneRad, zBase, cx + coneRad, cy + coneRad, zBase, zr, zg, zb)
+                addTri(cx, cy, zTip, cx + coneRad, cy + coneRad, zBase, cx - coneRad, cy + coneRad, zBase, zr, zg, zb)
+                addTri(cx, cy, zTip, cx - coneRad, cy + coneRad, zBase, cx - coneRad, cy - coneRad, zBase, zr, zg, zb)
+
+                // XY planar drag quad
+                val pOff = gizmoLen * 0.28f
+                addLine(cx + pOff, cy, cz, cx + pOff, cy + pOff, cz, 0.90f, 0.95f, 0.20f)
+                addLine(cx, cy + pOff, cz, cx + pOff, cy + pOff, cz, 0.90f, 0.95f, 0.20f)
+                addCubeHandle(cx, cy, cz, coneRad * 0.55f, 0.95f, 0.98f, 0.85f)
+            }
+
+            1 -> {
+                // SCALE GIZMO: X, Y, Z shafts + 3D Cube handles at tips + central uniform ring
+                val cubeHalf = (gizmoLen * 0.08f).coerceIn(2.2f, 6.5f)
+                addLine(cx, cy, cz, cx + gizmoLen, cy, cz, xr, xg, xb)
+                addCubeHandle(cx + gizmoLen, cy, cz, cubeHalf, xr, xg, xb)
+
+                addLine(cx, cy, cz, cx, cy + gizmoLen, cz, yr, yg, yb)
+                addCubeHandle(cx, cy + gizmoLen, cz, cubeHalf, yr, yg, yb)
+
+                addLine(cx, cy, cz, cx, cy, cz + gizmoLen, zr, zg, zb)
+                addCubeHandle(cx, cy, cz + gizmoLen, cubeHalf, zr, zg, zb)
+
+                addCubeHandle(cx, cy, cz, cubeHalf * 0.85f, 0.85f, 0.96f, 0.15f)
+
+                // Uniform scale XY ring
+                val ringSegs = 40
+                val ringRad = gizmoLen * 0.45f
+                for (i in 0 until ringSegs) {
+                    val a0 = (i.toFloat() / ringSegs) * (2f * PI.toFloat())
+                    val a1 = ((i + 1).toFloat() / ringSegs) * (2f * PI.toFloat())
+                    addLine(
+                        cx + cos(a0) * ringRad, cy + sin(a0) * ringRad, cz,
+                        cx + cos(a1) * ringRad, cy + sin(a1) * ringRad, cz,
+                        0.72f, 0.91f, 0.0f
+                    )
+                }
+            }
+
+            2 -> {
+                // ROTATE GIZMO: 3 orthogonal orbital rotation rings (X=Red YZ ring, Y=Lime XZ ring, Z=Cyan XY ring)
+                val segs = 56
+                val rad = gizmoLen * 0.82f
+                for (i in 0 until segs) {
+                    val a0 = (i.toFloat() / segs) * (2f * PI.toFloat())
+                    val a1 = ((i + 1).toFloat() / segs) * (2f * PI.toFloat())
+                    val c0 = cos(a0) * rad; val s0 = sin(a0) * rad
+                    val c1 = cos(a1) * rad; val s1 = sin(a1) * rad
+
+                    // X-axis rotation ring (in YZ plane)
+                    addLine(cx, cy + c0, cz + s0, cx, cy + c1, cz + s1, xr, xg, xb)
+                    // Y-axis rotation ring (in XZ plane)
+                    addLine(cx + c0, cy, cz + s0, cx + c1, cy, cz + s1, yr, yg, yb)
+                    // Z-axis rotation ring (in XY plane)
+                    addLine(cx + c0, cy + s0, cz, cx + c1, cy + s1, cz, zr, zg, zb)
+                }
+                val hSize = (rad * 0.07f).coerceIn(2.0f, 5.5f)
+                addCubeHandle(cx, cy + rad, cz, hSize, xr, xg, xb)
+                addCubeHandle(cx + rad, cy, cz, hSize, yr, yg, yb)
+                addCubeHandle(cx + rad * 0.707f, cy + rad * 0.707f, cz, hSize, zr, zg, zb)
+            }
+
+            3 -> {
+                // CUT PLANE GIZMO: Horizontal slice plane at Z = cutPlaneHeightMm
+                val cutZ = cutPlaneHeightMm.coerceIn(0.5f, bMaxZ)
+                val pad = 8f
+                val x0 = bMinX - pad; val x1 = bMaxX + pad
+                val y0 = bMinY - pad; val y1 = bMaxY + pad
+                addLine(x0, y0, cutZ, x1, y0, cutZ, 0.72f, 0.91f, 0.0f)
+                addLine(x1, y0, cutZ, x1, y1, cutZ, 0.72f, 0.91f, 0.0f)
+                addLine(x1, y1, cutZ, x0, y1, cutZ, 0.72f, 0.91f, 0.0f)
+                addLine(x0, y1, cutZ, x0, y0, cutZ, 0.72f, 0.91f, 0.0f)
+                addTri(x0, y0, cutZ, x1, y0, cutZ, x1, y1, cutZ, 0.72f, 0.91f, 0.0f)
+                addTri(x0, y0, cutZ, x1, y1, cutZ, x0, y1, cutZ, 0.72f, 0.91f, 0.0f)
+            }
+        }
+
+        if (lines.isEmpty() && tris.isEmpty()) return
+
+        Matrix.setIdentityM(modelMatrix, 0)
+        Matrix.multiplyMM(mvpMatrix, 0, vpMatrix, 0, modelMatrix, 0)
+
+        GLES30.glUseProgram(lineProgram)
+        val uMvp = GLES30.glGetUniformLocation(lineProgram, "uMVP")
+        val uAlpha = GLES30.glGetUniformLocation(lineProgram, "uAlpha")
+        val uShowTravel = GLES30.glGetUniformLocation(lineProgram, "uShowTravel")
+        GLES30.glUniformMatrix4fv(uMvp, 1, false, mvpMatrix, 0)
+        GLES30.glUniform1f(uShowTravel, 1.0f)
+
+        // Render gizmo on top of mesh so handles are always accessible
+        GLES30.glDisable(GLES30.GL_DEPTH_TEST)
+        val stride = 7 * 4
+
+        if (lines.isNotEmpty()) {
+            val lineArr = FloatArray(lines.size)
+            for (i in lines.indices) lineArr[i] = lines[i]
+            gizmoLineVboId = uploadFloatArrayToVbo(lineArr, gizmoLineVboId)
+            GLES30.glLineWidth(5.0f)
+            GLES30.glUniform1f(uAlpha, 0.98f)
+            GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, gizmoLineVboId)
+            GLES30.glEnableVertexAttribArray(0)
+            GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, stride, 0)
+            GLES30.glEnableVertexAttribArray(1)
+            GLES30.glVertexAttribPointer(1, 3, GLES30.GL_FLOAT, false, stride, 3 * 4)
+            GLES30.glEnableVertexAttribArray(2)
+            GLES30.glVertexAttribPointer(2, 1, GLES30.GL_FLOAT, false, stride, 6 * 4)
+            GLES30.glDrawArrays(GLES30.GL_LINES, 0, lineArr.size / 7)
+        }
+
+        if (tris.isNotEmpty()) {
+            val triArr = FloatArray(tris.size)
+            for (i in tris.indices) triArr[i] = tris[i]
+            gizmoTriVboId = uploadFloatArrayToVbo(triArr, gizmoTriVboId)
+            val triAlpha = if (activeGizmoModeOrdinal == 3) 0.28f else 0.96f
+            GLES30.glUniform1f(uAlpha, triAlpha)
+            GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, gizmoTriVboId)
+            GLES30.glEnableVertexAttribArray(0)
+            GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, stride, 0)
+            GLES30.glEnableVertexAttribArray(1)
+            GLES30.glVertexAttribPointer(1, 3, GLES30.GL_FLOAT, false, stride, 3 * 4)
+            GLES30.glEnableVertexAttribArray(2)
+            GLES30.glVertexAttribPointer(2, 1, GLES30.GL_FLOAT, false, stride, 6 * 4)
+            GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, triArr.size / 7)
+        }
+
+        GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, 0)
+        GLES30.glEnable(GLES30.GL_DEPTH_TEST)
+    }
+
+    private fun projectWorldToScreen(wx: Float, wy: Float, wz: Float): Pair<Float, Float>? {
+        val clip = FloatArray(4)
+        val inVec = floatArrayOf(wx, wy, wz, 1.0f)
+        Matrix.multiplyMV(clip, 0, vpMatrix, 0, inVec, 0)
+        if (clip[3] <= 0.001f) return null
+        val ndcX = clip[0] / clip[3]
+        val ndcY = clip[1] / clip[3]
+        val sx = (ndcX + 1.0f) * 0.5f * viewportWidth
+        val sy = (1.0f - ndcY) * 0.5f * viewportHeight
+        return sx to sy
+    }
+
+    private fun distToSegment2D(px: Float, py: Float, x0: Float, y0: Float, x1: Float, y1: Float): Float {
+        val dx = x1 - x0
+        val dy = y1 - y0
+        val lenSq = dx * dx + dy * dy
+        if (lenSq < 1e-4f) {
+            val ex = px - x0
+            val ey = py - y0
+            return kotlin.math.sqrt(ex * ex + ey * ey)
+        }
+        val t = (((px - x0) * dx + (py - y0) * dy) / lenSq).coerceIn(0f, 1f)
+        val projX = x0 + t * dx
+        val projY = y0 + t * dy
+        val ex = px - projX
+        val ey = py - projY
+        return kotlin.math.sqrt(ex * ex + ey * ey)
+    }
+
+    /**
+     * Hit-tests `(screenX, screenY)` against the active 3D Transform Gizmo handles on the selected object.
+     * Returns:
+     *  `0` = X axis handle
+     *  `1` = Y axis handle
+     *  `2` = Z axis handle
+     *  `3` = Central / Free XY / Uniform handle (or selected object body when MOVE/ROTATE/SCALE is active)
+     * `-1` = No gizmo hit (orbit camera as normal)
+     */
+    fun hitTestGizmoAxis(screenX: Float, screenY: Float): Int {
+        if (!showTransformGizmo || isPreviewMode || activeGizmoModeOrdinal !in 0..2) return -1
+        val selId = selectedObjectId ?: return -1
+        val obj = sceneObjects.firstOrNull { it.id == selId && it.visible } ?: return -1
+
+        val wb = obj.worldBoundingBox()
+        val zSnap = -wb.min.z
+        val cx = (wb.min.x + wb.max.x) * 0.5f
+        val cy = (wb.min.y + wb.max.y) * 0.5f
+        val cz = ((wb.min.z + wb.max.z) * 0.5f) + zSnap
+        val maxExtent = max(max(wb.size.x, wb.size.y), wb.size.z).coerceAtLeast(16f)
+        val gizmoLen = (maxExtent * 0.85f).coerceIn(24f, 95f)
+
+        val pCenter = projectWorldToScreen(cx, cy, cz) ?: return -1
+        val hitThresholdPx = 56f
+
+        if (activeGizmoModeOrdinal == 0 || activeGizmoModeOrdinal == 1) {
+            val pX = projectWorldToScreen(cx + gizmoLen, cy, cz)
+            val pY = projectWorldToScreen(cx, cy + gizmoLen, cz)
+            val pZ = projectWorldToScreen(cx, cy, cz + gizmoLen)
+
+            val dCenter = distToSegment2D(screenX, screenY, pCenter.first, pCenter.second, pCenter.first, pCenter.second)
+            if (dCenter < hitThresholdPx * 0.75f) return 3
+
+            val dX = pX?.let { distToSegment2D(screenX, screenY, pCenter.first, pCenter.second, it.first, it.second) } ?: Float.POSITIVE_INFINITY
+            val dY = pY?.let { distToSegment2D(screenX, screenY, pCenter.first, pCenter.second, it.first, it.second) } ?: Float.POSITIVE_INFINITY
+            val dZ = pZ?.let { distToSegment2D(screenX, screenY, pCenter.first, pCenter.second, it.first, it.second) } ?: Float.POSITIVE_INFINITY
+
+            val minAxisDist = min(dX, min(dY, dZ))
+            if (minAxisDist <= hitThresholdPx) {
+                return when (minAxisDist) {
+                    dX -> 0
+                    dY -> 1
+                    else -> 2
+                }
+            }
+        } else if (activeGizmoModeOrdinal == 2) {
+            // Rotate rings: check handle points on X, Y, Z rings
+            val rad = gizmoLen * 0.82f
+            val pX = projectWorldToScreen(cx, cy + rad, cz)
+            val pY = projectWorldToScreen(cx + rad, cy, cz)
+            val pZ = projectWorldToScreen(cx + rad * 0.707f, cy + rad * 0.707f, cz)
+
+            val dX = pX?.let { distToSegment2D(screenX, screenY, it.first, it.second, it.first, it.second) } ?: Float.POSITIVE_INFINITY
+            val dY = pY?.let { distToSegment2D(screenX, screenY, it.first, it.second, it.first, it.second) } ?: Float.POSITIVE_INFINITY
+            val dZ = pZ?.let { distToSegment2D(screenX, screenY, it.first, it.second, it.first, it.second) } ?: Float.POSITIVE_INFINITY
+
+            val minRingDist = min(dX, min(dY, dZ))
+            if (minRingDist <= hitThresholdPx * 1.25f) {
+                return when (minRingDist) {
+                    dX -> 0
+                    dY -> 1
+                    else -> 2
+                }
+            }
+        }
+
+        // Also check if touch ray hits the selected object's bounding box directly
+        val ndcX = (2.0f * screenX) / viewportWidth - 1.0f
+        val ndcY = 1.0f - (2.0f * screenY) / viewportHeight
+        val nearClip = floatArrayOf(ndcX, ndcY, -1.0f, 1.0f)
+        val farClip = floatArrayOf(ndcX, ndcY, 1.0f, 1.0f)
+        val nearWorld = FloatArray(4)
+        val farWorld = FloatArray(4)
+        Matrix.multiplyMV(nearWorld, 0, invVpMatrix, 0, nearClip, 0)
+        Matrix.multiplyMV(farWorld, 0, invVpMatrix, 0, farClip, 0)
+        if (kotlin.math.abs(nearWorld[3]) > 1e-6f && kotlin.math.abs(farWorld[3]) > 1e-6f) {
+            val rayOrigin = Vec3(nearWorld[0] / nearWorld[3], nearWorld[1] / nearWorld[3], nearWorld[2] / nearWorld[3])
+            val rayEnd = Vec3(farWorld[0] / farWorld[3], farWorld[1] / farWorld[3], farWorld[2] / farWorld[3])
+            val rayDir = (rayEnd - rayOrigin).normalized()
+            val snappedBounds = BoundingBox(
+                min = Vec3(wb.min.x, wb.min.y, 0f),
+                max = Vec3(wb.max.x, wb.max.y, wb.max.z + zSnap)
+            )
+            if (snappedBounds.intersectRay(rayOrigin, rayDir) != null) {
+                return 3
+            }
+        }
+
+        return -1
     }
 
     private fun getOrCreateMeshVbo(mesh: MeshData): GpuMeshBuffer {
@@ -605,9 +989,9 @@ class OrcaGlRenderer(
 
                 vec3 base = uBaseColor;
 
-                // Selection highlight tint
+                // Selection highlight tint (Lumos Acid Lime)
                 if (uSelected > 0.5) {
-                    base = mix(base, vec3(0.25, 0.98, 0.78), 0.25);
+                    base = mix(base, vec3(0.72, 0.91, 0.0), 0.28);
                 }
 
                 // GPU Overhang Detection: highlight downward-facing surfaces steeper than threshold

@@ -14,6 +14,7 @@ import com.orcaslicer.android.model.FilamentProfile
 import com.orcaslicer.android.model.PrinterProfile
 import com.orcaslicer.android.model.SceneObject
 import com.orcaslicer.android.model.SliceResult
+import com.orcaslicer.android.model.Vec3
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -24,6 +25,7 @@ class OrcaGlSurfaceView(
 ) : GLSurfaceView(context) {
 
     val renderer: OrcaGlRenderer = OrcaGlRenderer(onObjectSelected)
+    var onTransformSelectedObject: (((SceneObject) -> SceneObject) -> Unit)? = null
     var lastHandledPresetTriggerId: Int = 0
     var lastHandledFitTriggerId: Int = 0
 
@@ -32,6 +34,7 @@ class OrcaGlSurfaceView(
     private var prevTwoFingerX = 0f
     private var prevTwoFingerY = 0f
     private var isScalingOrPanning = false
+    private var draggedGizmoAxis = -1 // -1=none, 0=X, 1=Y, 2=Z, 3=XY/Uniform
 
     private val scaleDetector = ScaleGestureDetector(
         context,
@@ -87,11 +90,18 @@ class OrcaGlSurfaceView(
                 prevTouchX = event.x
                 prevTouchY = event.y
                 isScalingOrPanning = false
+                draggedGizmoAxis = renderer.hitTestGizmoAxis(event.x, event.y)
+                renderer.activeDraggedAxis = draggedGizmoAxis
+                if (draggedGizmoAxis != -1) {
+                    requestRender()
+                }
             }
 
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (event.pointerCount >= 2) {
                     isScalingOrPanning = true
+                    draggedGizmoAxis = -1
+                    renderer.activeDraggedAxis = -1
                     prevTwoFingerX = (event.getX(0) + event.getX(1)) * 0.5f
                     prevTwoFingerY = (event.getY(0) + event.getY(1)) * 0.5f
                 }
@@ -100,6 +110,8 @@ class OrcaGlSurfaceView(
             MotionEvent.ACTION_MOVE -> {
                 if (event.pointerCount >= 2) {
                     isScalingOrPanning = true
+                    draggedGizmoAxis = -1
+                    renderer.activeDraggedAxis = -1
                     val cx = (event.getX(0) + event.getX(1)) * 0.5f
                     val cy = (event.getY(0) + event.getY(1)) * 0.5f
                     val dx = cx - prevTwoFingerX
@@ -123,14 +135,80 @@ class OrcaGlSurfaceView(
                     prevTouchX = event.x
                     prevTouchY = event.y
 
-                    renderer.cameraYawDeg -= dx * 0.38f
-                    renderer.cameraPitchDeg = (renderer.cameraPitchDeg + dy * 0.35f).coerceIn(-82f, 85f)
-                    requestRender()
+                    if (draggedGizmoAxis != -1 && onTransformSelectedObject != null) {
+                        val moveScale = (renderer.cameraDistance * 0.0015f).coerceIn(0.05f, 1.5f)
+                        val yawRad = renderer.cameraYawDeg * (PI.toFloat() / 180f)
+                        val rightX = -sin(yawRad)
+                        val rightY = cos(yawRad)
+                        val fwdX = -cos(yawRad)
+                        val fwdY = -sin(yawRad)
+                        val halfBedX = (renderer.printerProfile?.bedWidthX ?: 256f) * 0.5f
+                        val halfBedY = (renderer.printerProfile?.bedDepthY ?: 256f) * 0.5f
+
+                        val worldDeltaX = dx * rightX * moveScale - dy * fwdX * moveScale
+                        val worldDeltaY = dx * rightY * moveScale - dy * fwdY * moveScale
+                        val worldDeltaZ = -dy * moveScale
+
+                        when (renderer.activeGizmoModeOrdinal) {
+                            0 -> {
+                                // MOVE GIZMO
+                                onTransformSelectedObject?.invoke { obj ->
+                                    when (draggedGizmoAxis) {
+                                        0 -> obj.copy(position = obj.position.copy(x = (obj.position.x + worldDeltaX).coerceIn(-halfBedX, halfBedX)))
+                                        1 -> obj.copy(position = obj.position.copy(y = (obj.position.y + worldDeltaY).coerceIn(-halfBedY, halfBedY)))
+                                        2 -> obj.copy(position = obj.position.copy(z = (obj.position.z + worldDeltaZ).coerceIn(-50f, 300f)))
+                                        else -> obj.copy(
+                                            position = obj.position.copy(
+                                                x = (obj.position.x + worldDeltaX).coerceIn(-halfBedX, halfBedX),
+                                                y = (obj.position.y + worldDeltaY).coerceIn(-halfBedY, halfBedY)
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                            1 -> {
+                                // SCALE GIZMO
+                                val scaleDelta = (dx - dy) * 0.0045f
+                                onTransformSelectedObject?.invoke { obj ->
+                                    when (draggedGizmoAxis) {
+                                        0 -> obj.copy(scale = obj.scale.copy(x = (obj.scale.x + scaleDelta).coerceIn(0.1f, 5.0f)))
+                                        1 -> obj.copy(scale = obj.scale.copy(y = (obj.scale.y + scaleDelta).coerceIn(0.1f, 5.0f)))
+                                        2 -> obj.copy(scale = obj.scale.copy(z = (obj.scale.z + scaleDelta).coerceIn(0.1f, 5.0f)))
+                                        else -> {
+                                            val nextS = (obj.scale.x + scaleDelta).coerceIn(0.1f, 5.0f)
+                                            obj.copy(scale = Vec3(nextS, nextS, nextS))
+                                        }
+                                    }
+                                }
+                            }
+                            2 -> {
+                                // ROTATE GIZMO
+                                val degDelta = (dx - dy) * 0.55f
+                                onTransformSelectedObject?.invoke { obj ->
+                                    when (draggedGizmoAxis) {
+                                        0 -> obj.copy(rotationDeg = obj.rotationDeg.copy(x = ((obj.rotationDeg.x + degDelta + 540f) % 360f) - 180f))
+                                        1 -> obj.copy(rotationDeg = obj.rotationDeg.copy(y = ((obj.rotationDeg.y + degDelta + 540f) % 360f) - 180f))
+                                        else -> obj.copy(rotationDeg = obj.rotationDeg.copy(z = ((obj.rotationDeg.z + dx * 0.65f + 540f) % 360f) - 180f))
+                                    }
+                                }
+                            }
+                        }
+                        requestRender()
+                    } else {
+                        renderer.cameraYawDeg -= dx * 0.38f
+                        renderer.cameraPitchDeg = (renderer.cameraPitchDeg + dy * 0.35f).coerceIn(-82f, 85f)
+                        requestRender()
+                    }
                 }
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 isScalingOrPanning = false
+                if (draggedGizmoAxis != -1) {
+                    draggedGizmoAxis = -1
+                    renderer.activeDraggedAxis = -1
+                    requestRender()
+                }
             }
         }
         return true
@@ -154,7 +232,11 @@ fun Orca3DViewport(
     showTravelMoves: Boolean,
     cameraPresetTrigger: Pair<Int, ViewportCameraPreset>?,
     fitCameraTrigger: Int,
-    onObjectSelected: (String?) -> Unit
+    activeGizmoModeOrdinal: Int = 0,
+    showTransformGizmo: Boolean = true,
+    cutPlaneHeightMm: Float = 10f,
+    onObjectSelected: (String?) -> Unit,
+    onTransformSelectedObject: (((SceneObject) -> SceneObject) -> Unit)? = null
 ) {
     val filamentRgb = remember(filament.colorHex) {
         val r = ((filament.colorHex shr 16) and 0xFF) / 255f
@@ -166,9 +248,12 @@ fun Orca3DViewport(
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
-            OrcaGlSurfaceView(ctx, onObjectSelected)
+            OrcaGlSurfaceView(ctx, onObjectSelected).apply {
+                this.onTransformSelectedObject = onTransformSelectedObject
+            }
         },
         update = { view ->
+            view.onTransformSelectedObject = onTransformSelectedObject
             val r = view.renderer
             r.sceneObjects = objects
             r.selectedObjectId = selectedObjectId
@@ -182,6 +267,9 @@ fun Orca3DViewport(
             r.maxVisibleLayer = maxVisibleLayer
             r.activeLayerProgress = activeLayerProgress
             r.showTravelMoves = showTravelMoves
+            r.activeGizmoModeOrdinal = activeGizmoModeOrdinal
+            r.showTransformGizmo = showTransformGizmo
+            r.cutPlaneHeightMm = cutPlaneHeightMm
 
             if (cameraPresetTrigger != null && cameraPresetTrigger.first != view.lastHandledPresetTriggerId) {
                 view.lastHandledPresetTriggerId = cameraPresetTrigger.first

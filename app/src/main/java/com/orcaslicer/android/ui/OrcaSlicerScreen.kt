@@ -135,19 +135,19 @@ import kotlinx.coroutines.delay
 import java.util.Locale
 import kotlin.math.roundToInt
 
-// Design reference colors from mobile_3d_slicer_ui.html harmonized with DolphinSlicer Azure/Teal accent
-internal val OrcaActiveTabBg = Color(0xFF1B7FB0)
-private val OrcaGlassBg = Color(0xE016171B)          // rgba(22, 23, 27, 0.88)
-private val OrcaGlassBorder = Color(0x1FFFFFFF)      // rgba(255, 255, 255, 0.12)
-private val OrcaActiveBtnBg = Color(0x2E29ABE2)      // rgba(41, 171, 226, 0.18)
-private val OrcaActiveBtnBorder = Color(0x7329ABE2)  // rgba(41, 171, 226, 0.45)
-private val EmeraldGreen = Color(0xFF34D399)
-private val EmeraldDimBg = Color(0x1A10B981)
-private val EmeraldBorder = Color(0x3310B981)
+// Lumos Dark Obsidian + Acid Chartreuse-Lime (#B8E900) + Crimson (#E53935) Theme Palette
+internal val OrcaActiveTabBg = Color(0xFF8DB800)
+private val OrcaGlassBg = Color(0xE60C0E0C)          // Deep obsidian glass
+private val OrcaGlassBorder = Color(0x26B8E900)      // Subtle chartreuse-lime border
+private val OrcaActiveBtnBg = Color(0x33B8E900)      // Acid lime active fill
+private val OrcaActiveBtnBorder = Color(0x99B8E900)  // Acid lime active border
+private val EmeraldGreen = Color(0xFFB8E900)         // Chartreuse-lime status accent
+private val EmeraldDimBg = Color(0x2296C400)
+private val EmeraldBorder = Color(0x55B8E900)
 
 private val OrcaColorScheme = darkColorScheme(
     primary = OrcaTeal,
-    onPrimary = Color(0xFF04141F),
+    onPrimary = Color(0xFF070900),
     secondary = OrcaTealBright,
     background = OrcaDarkBg,
     surface = OrcaPanelBg,
@@ -490,7 +490,7 @@ private fun OrcaMobileReferenceHeader(
                                 .padding(horizontal = 3.dp, vertical = 0.5.dp)
                         ) {
                             Text(
-                                text = "v1.1.7",
+                                text = "v1.1.8",
                                 fontSize = 8.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = OrcaTealBright,
@@ -988,7 +988,7 @@ private fun OrcaMobileReferenceHeader(
                         OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
                         Column {
                             Text(
-                                text = "DolphinSlicer v1.1.7",
+                                text = "DolphinSlicer v1.1.8",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = OrcaTealBright
@@ -1125,7 +1125,11 @@ private fun ViewportWithTouchOverlays(
             showTravelMoves = state.showTravelMoves,
             cameraPresetTrigger = state.cameraPresetTrigger,
             fitCameraTrigger = state.fitCameraTrigger,
-            onObjectSelected = viewModel::selectObject
+            activeGizmoModeOrdinal = state.activeGizmoMode.ordinal,
+            showTransformGizmo = !isPreview && state.selectedObjectId != null,
+            cutPlaneHeightMm = state.cutPlaneHeightMm,
+            onObjectSelected = viewModel::selectObject,
+            onTransformSelectedObject = viewModel::updateSelectedObject
         )
 
         // 2. PREPARE MODE: Left Vertical Tool Palette (`#prepareToolsToolbar`, HTML lines 226-248)
@@ -3311,146 +3315,315 @@ private fun StatMetricItem(label: String, value: String) {
     }
 }
 
+@android.annotation.SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun DeviceNetworkPanel(
     state: OrcaUiState,
     viewModel: OrcaViewModel
 ) {
+    var showApiDrawer by remember { mutableStateOf(false) }
+    var webViewRef by remember { mutableStateOf<android.webkit.WebView?>(null) }
+    var isLoadingPage by remember { mutableStateOf(false) }
+    var loadProgress by remember { mutableIntStateOf(0) }
+
+    val defaultUrl = remember(state.printerHost) {
+        val h = state.printerHost.trim().ifEmpty { "192.168.1.100" }
+        if (h.startsWith("http://", ignoreCase = true) || h.startsWith("https://", ignoreCase = true)) h else "http://$h"
+    }
+    var urlInput by remember(defaultUrl) { mutableStateOf(defaultUrl) }
+    var committedUrl by remember { mutableStateOf(defaultUrl) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .background(OrcaDarkBg)
     ) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = OrcaCardBg),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
+        // 1. Compact Klipper / Mainsail / Fluidd WebUI Address & Control Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(OrcaTopBarBg)
+                .border(1.dp, OrcaBorder)
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+            // Back button
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(OrcaInputBg)
+                    .border(1.dp, OrcaBorder, RoundedCornerShape(5.dp))
+                    .clickable {
+                        if (webViewRef?.canGoBack() == true) webViewRef?.goBack()
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                SectionHeaderRow(Icons.Default.Router, "Wi-Fi / LAN 3D Printer Connection")
-                Text(
-                    text = "Connect directly to Klipper / Moonraker (Mainsail, Fluidd, Creality K1, Voron) or OctoPrint to monitor temperatures and send sliced G-code over Wi-Fi.",
-                    fontSize = 12.sp,
-                    color = OrcaTextSecondary
+                Text("<", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = OrcaTextPrimary)
+            }
+
+            // Reload button
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(OrcaInputBg)
+                    .border(1.dp, OrcaBorder, RoundedCornerShape(5.dp))
+                    .clickable { webViewRef?.reload() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("↻", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = OrcaTealBright)
+            }
+
+            // URL / Klipper IP Input Box
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(26.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(OrcaInputBg)
+                    .border(1.dp, OrcaBorder, RoundedCornerShape(5.dp))
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Wifi,
+                    contentDescription = null,
+                    tint = OrcaTealBright,
+                    modifier = Modifier.size(12.dp)
                 )
-
-                TouchEnumSelector(
-                    label = "Printer API Protocol",
-                    options = NetworkProtocol.entries,
-                    selected = state.printerProtocol,
-                    optionLabel = { it.label },
-                    onSelect = { proto ->
-                        viewModel.updatePrinterNetworkConfig(
-                            protocol = proto,
-                            port = proto.defaultPort.toString()
-                        )
-                    }
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = state.printerHost,
-                        onValueChange = { viewModel.updatePrinterNetworkConfig(host = it) },
-                        label = { Text("Printer IP / Hostname") },
-                        singleLine = true,
-                        modifier = Modifier.weight(0.7f)
-                    )
-                    OutlinedTextField(
-                        value = state.printerPort,
-                        onValueChange = { viewModel.updatePrinterNetworkConfig(port = it) },
-                        label = { Text("Port") },
-                        singleLine = true,
-                        modifier = Modifier.weight(0.3f)
-                    )
-                }
-
-                OutlinedTextField(
-                    value = state.printerApiKey,
-                    onValueChange = { viewModel.updatePrinterNetworkConfig(apiKey = it) },
-                    label = { Text("API Key / Access Code (Optional for Moonraker LAN)") },
+                androidx.compose.foundation.text.BasicTextField(
+                    value = urlInput,
+                    onValueChange = { urlInput = it },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        color = OrcaTextPrimary,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    ),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(OrcaTealBright),
+                    modifier = Modifier.weight(1f)
                 )
+            }
 
+            // Go button
+            Box(
+                modifier = Modifier
+                    .height(26.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(OrcaTealBright)
+                    .clickable {
+                        val cleaned = urlInput.trim().let {
+                            if (it.startsWith("http://", ignoreCase = true) || it.startsWith("https://", ignoreCase = true)) it else "http://$it"
+                        }
+                        val hostOnly = cleaned.substringAfter("://").substringBefore(":").substringBefore("/")
+                        if (hostOnly.isNotBlank()) {
+                            viewModel.updatePrinterNetworkConfig(host = hostOnly)
+                        }
+                        committedUrl = cleaned
+                        webViewRef?.loadUrl(cleaned)
+                    }
+                    .padding(horizontal = 9.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("GO", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF070900))
+            }
+
+            // Quick Upload G-Code Pill
+            Box(
+                modifier = Modifier
+                    .height(26.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(OrcaInputBg)
+                    .border(1.dp, OrcaTealBright.copy(alpha = 0.6f), RoundedCornerShape(5.dp))
+                    .clickable(enabled = !state.isNetworkBusy) {
+                        viewModel.sendGCodeToNetworkPrinter(startImmediately = false)
+                    }
+                    .padding(horizontal = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
                 Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Button(
-                        onClick = viewModel::testPrinterConnection,
-                        enabled = !state.isNetworkBusy,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = OrcaTealBright,
-                            contentColor = Color(0xFF041F18)
-                        )
-                    ) {
-                        Icon(Icons.Default.Router, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Query Status", fontWeight = FontWeight.Bold)
-                    }
-
-                    OutlinedButton(
-                        onClick = { viewModel.sendGCodeToNetworkPrinter(startImmediately = false) },
-                        enabled = !state.isNetworkBusy
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Upload G-Code")
-                    }
-
-                    Button(
-                        onClick = { viewModel.sendGCodeToNetworkPrinter(startImmediately = true) },
-                        enabled = !state.isNetworkBusy,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF38BDF8),
-                            contentColor = Color(0xFF041F18)
-                        )
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Upload & Start Print", fontWeight = FontWeight.Bold)
-                    }
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = OrcaTealBright, modifier = Modifier.size(11.dp))
+                    Text("Send G-Code", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = OrcaTealBright, maxLines = 1, softWrap = false)
                 }
+            }
+
+            // Toggle Moonraker API Config Drawer
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(if (showApiDrawer) OrcaActiveBtnBg else OrcaInputBg)
+                    .border(1.dp, if (showApiDrawer) OrcaTealBright else OrcaBorder, RoundedCornerShape(5.dp))
+                    .clickable { showApiDrawer = !showApiDrawer },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Tune, contentDescription = "API Settings", tint = OrcaTealBright, modifier = Modifier.size(13.dp))
             }
         }
 
-        state.printerTelemetry?.let { tel ->
+        if (isLoadingPage) {
+            LinearProgressIndicator(
+                progress = { (loadProgress / 100f).coerceIn(0.05f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp),
+                color = OrcaTealBright,
+                trackColor = OrcaDarkBg
+            )
+        }
+
+        // 2. Optional Collapsible Moonraker / OctoPrint API & Direct Upload Drawer
+        AnimatedVisibility(visible = showApiDrawer) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = OrcaCardBg),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
+                shape = RoundedCornerShape(0.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, OrcaBorder)
             ) {
                 Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    SectionHeaderRow(Icons.Default.Analytics, "Live Printer Telemetry")
+                    SectionHeaderRow(Icons.Default.Router, "Moonraker / Klipper Direct API & Telemetry")
+                    TouchEnumSelector(
+                        label = "Printer API Protocol",
+                        options = NetworkProtocol.entries,
+                        selected = state.printerProtocol,
+                        optionLabel = { it.label },
+                        onSelect = { proto ->
+                            viewModel.updatePrinterNetworkConfig(
+                                protocol = proto,
+                                port = proto.defaultPort.toString()
+                            )
+                        }
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        StatMetricItem("State", tel.stateText)
-                        StatMetricItem(
-                            "Nozzle Temp",
-                            String.format(Locale.US, "%.1f°C / %.0f°C", tel.nozzleTempC, tel.nozzleTargetC)
+                        OutlinedTextField(
+                            value = state.printerHost,
+                            onValueChange = {
+                                viewModel.updatePrinterNetworkConfig(host = it)
+                                urlInput = "http://${it.trim()}"
+                            },
+                            label = { Text("Klipper IP / Hostname", fontSize = 10.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(0.68f)
                         )
-                        StatMetricItem(
-                            "Bed Temp",
-                            String.format(Locale.US, "%.1f°C / %.0f°C", tel.bedTempC, tel.bedTargetC)
+                        OutlinedTextField(
+                            value = state.printerPort,
+                            onValueChange = { viewModel.updatePrinterNetworkConfig(port = it) },
+                            label = { Text("API Port", fontSize = 10.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(0.32f)
                         )
-                        StatMetricItem("Progress", "${tel.progressPercent}%")
+                    }
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = viewModel::testPrinterConnection,
+                            enabled = !state.isNetworkBusy,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = OrcaTealBright,
+                                contentColor = Color(0xFF070900)
+                            )
+                        ) {
+                            Icon(Icons.Default.Router, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Query Status", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { viewModel.sendGCodeToNetworkPrinter(startImmediately = false) },
+                            enabled = !state.isNetworkBusy
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Upload G-Code", fontSize = 11.sp)
+                        }
+                        Button(
+                            onClick = { viewModel.sendGCodeToNetworkPrinter(startImmediately = true) },
+                            enabled = !state.isNetworkBusy,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = OrcaTeal,
+                                contentColor = Color(0xFF070900)
+                            )
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Upload & Start Print", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    state.printerTelemetry?.let { tel ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            StatMetricItem("State", tel.stateText)
+                            StatMetricItem("Nozzle", String.format(Locale.US, "%.1f°C / %.0f°C", tel.nozzleTempC, tel.nozzleTargetC))
+                            StatMetricItem("Bed", String.format(Locale.US, "%.1f°C / %.0f°C", tel.bedTempC, tel.bedTargetC))
+                            StatMetricItem("Progress", "${tel.progressPercent}%")
+                        }
                     }
                 }
             }
         }
+
+        // 3. Full-Screen Embedded Klipper / Mainsail / Fluidd WebView
+        androidx.compose.ui.viewinterop.AndroidView(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            factory = { ctx ->
+                android.webkit.WebView(ctx).apply {
+                    setBackgroundColor(android.graphics.Color.parseColor("#0A0B0A"))
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        databaseEnabled = true
+                        useWideViewPort = true
+                        loadWithOverviewMode = true
+                        builtInZoomControls = true
+                        displayZoomControls = false
+                        mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    }
+                    webViewClient = object : android.webkit.WebViewClient() {
+                        override fun onPageStarted(view: android.webkit.WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                            isLoadingPage = true
+                            if (!url.isNullOrBlank()) {
+                                urlInput = url
+                            }
+                        }
+
+                        override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                            isLoadingPage = false
+                        }
+                    }
+                    webChromeClient = object : android.webkit.WebChromeClient() {
+                        override fun onProgressChanged(view: android.webkit.WebView?, newProgress: Int) {
+                            loadProgress = newProgress
+                            if (newProgress >= 100) isLoadingPage = false
+                        }
+                    }
+                    loadUrl(committedUrl)
+                    webViewRef = this
+                }
+            },
+            update = { view ->
+                webViewRef = view
+            }
+        )
     }
 }
