@@ -1,6 +1,7 @@
 package com.orcaslicer.android.slicer
 
 import com.orcaslicer.android.model.BrimType
+import com.orcaslicer.android.model.CombingMode
 import com.orcaslicer.android.model.FilamentProfile
 import com.orcaslicer.android.model.FuzzySkinType
 import com.orcaslicer.android.model.InfillPattern
@@ -9,6 +10,7 @@ import com.orcaslicer.android.model.PrintStatistics
 import com.orcaslicer.android.model.PrinterProfile
 import com.orcaslicer.android.model.ProcessProfile
 import com.orcaslicer.android.model.SceneObject
+import com.orcaslicer.android.model.SeamPosition
 import com.orcaslicer.android.model.SliceLayer
 import com.orcaslicer.android.model.SliceResult
 import com.orcaslicer.android.model.SupportBasePattern
@@ -310,6 +312,50 @@ object SlicingEngine {
         val sparseInfillWidth = process.sparseInfillLineWidthMm.coerceIn(0.25f, 1.0f)
         val supportWidth = process.supportLineWidthMm.coerceIn(0.25f, 1.0f)
 
+        val bottomShellCountForComb = process.bottomShellLayers.coerceIn(0, 50)
+        val topShellCountForComb = process.topShellLayers.coerceIn(0, 50)
+        val isPureSkinLayer = (layerIdx < bottomShellCountForComb) || (layerIdx >= totalLayers - topShellCountForComb)
+
+        // Build allowed combing boundary polygons based on Cura Combing Mode
+        val combingAllowedPolygons: List<List<Vec2>> = when (process.combingMode) {
+            CombingMode.OFF -> emptyList()
+            CombingMode.ALL -> geom.outerContours.map { offsetPolygonInward(it, outerWallWidth * 0.25f).ifEmpty { it } }
+            CombingMode.NOT_ON_OUTER_SURFACE -> geom.wallLoopsPerContour.mapNotNull { loops ->
+                loops.getOrNull(1) ?: loops.firstOrNull()
+            }
+            CombingMode.NOT_IN_SKIN -> if (isPureSkinLayer) {
+                emptyList()
+            } else {
+                geom.infillPolygons
+            }
+            CombingMode.WITHIN_INFILL -> if (isPureSkinLayer) {
+                emptyList()
+            } else {
+                geom.infillPolygons
+            }
+        }
+
+        // Build travel obstacle polygons when "Avoid printed parts / supports when traveling" is enabled
+        val travelObstaclePolygons: List<List<Vec2>> = if (process.combingMode != CombingMode.OFF &&
+            (process.avoidPrintedPartsWhenTraveling || process.avoidSupportsWhenTraveling)
+        ) {
+            val avoidDist = process.travelAvoidDistanceMm.coerceIn(0.1f, 5.0f)
+            val obs = ArrayList<List<Vec2>>()
+            if (process.avoidPrintedPartsWhenTraveling) {
+                for (c in geom.outerContours) {
+                    obs.add(offsetPolygonOutward(c, avoidDist).ifEmpty { c })
+                }
+            }
+            if (process.avoidSupportsWhenTraveling) {
+                for (sLoop in supportPlan.closedLoops) {
+                    obs.add(offsetPolygonOutward(sLoop, avoidDist).ifEmpty { sLoop })
+                }
+            }
+            obs
+        } else {
+            emptyList()
+        }
+
         fun appendPath(
             points: List<Vec2>,
             type: ToolpathType,
@@ -319,27 +365,56 @@ object SlicingEngine {
             flowMultiplier: Float = 1.0f
         ) {
             if (points.size < 2) return
+            val orderedPts = if (closed && points.size >= 3 && (type == ToolpathType.OUTER_WALL || type == ToolpathType.INNER_WALL)) {
+                val refPt = if (process.seamPosition == SeamPosition.NEAREST && lastNozzlePos != null) {
+                    Vec2(lastNozzlePos!!.x, lastNozzlePos!!.y)
+                } else {
+                    Vec2(process.layerStartXMm, process.layerStartYMm)
+                }
+                alignClosedPolygonStart(points, refPt)
+            } else {
+                points
+            }
+
             val extrusionPerMm = ((lineWidthMm * layerHeight) / filamentArea) * filament.flowRatio * flowMultiplier
-            val first3D = Vec3(points[0].x, points[0].y, nominalZ)
+            val first3D = Vec3(orderedPts[0].x, orderedPts[0].y, nominalZ)
             lastNozzlePos?.let { prev ->
                 if (prev.distanceTo(first3D) > lineWidthMm * 1.6f) {
-                    segments.add(
-                        ToolpathSegment(
-                            start = prev,
-                            end = first3D,
-                            type = ToolpathType.TRAVEL,
-                            extrusionMm = 0f,
-                            speedMmS = process.travelSpeedMmS,
-                            layerIndex = layerIdx,
-                            widthMm = 0.18f
-                        )
+                    val combedTravel = computeCuraCombedTravel(
+                        start = Vec2(prev.x, prev.y),
+                        end = Vec2(first3D.x, first3D.y),
+                        combingPolygons = combingAllowedPolygons,
+                        obstaclePolygons = travelObstaclePolygons,
+                        targetType = type,
+                        lineWidthMm = lineWidthMm,
+                        process = process
                     )
+                    val wps = combedTravel.waypoints
+                    for (wIdx in 0 until wps.size - 1) {
+                        val wStart = Vec3(wps[wIdx].x, wps[wIdx].y, nominalZ)
+                        val wEnd = Vec3(wps[wIdx + 1].x, wps[wIdx + 1].y, nominalZ)
+                        if (wStart.distanceTo(wEnd) > 0.01f) {
+                            segments.add(
+                                ToolpathSegment(
+                                    start = wStart,
+                                    end = wEnd,
+                                    type = ToolpathType.TRAVEL,
+                                    extrusionMm = 0f,
+                                    speedMmS = process.travelSpeedMmS,
+                                    layerIndex = layerIdx,
+                                    widthMm = 0.18f,
+                                    isCombed = combedTravel.isCombed,
+                                    requiresRetract = combedTravel.requiresRetract
+                                )
+                            )
+                        }
+                    }
                 }
             }
 
-            for (i in 0 until points.size - 1) {
-                val p0 = Vec3(points[i].x, points[i].y, nominalZ)
-                val p1 = Vec3(points[i + 1].x, points[i + 1].y, nominalZ)
+            for (i in 0 until orderedPts.size - 1) {
+                val p0 = Vec3(orderedPts[i].x, orderedPts[i].y, nominalZ)
+                val p1 = Vec3(orderedPts[i + 1].x, orderedPts[i + 1].y, nominalZ)
                 val len = p0.distanceTo(p1)
                 if (len > 0.015f) {
                     segments.add(
@@ -357,9 +432,9 @@ object SlicingEngine {
                 }
             }
 
-            if (closed && points.size >= 3) {
-                val pLast = Vec3(points.last().x, points.last().y, nominalZ)
-                val pFirst = Vec3(points.first().x, points.first().y, nominalZ)
+            if (closed && orderedPts.size >= 3) {
+                val pLast = Vec3(orderedPts.last().x, orderedPts.last().y, nominalZ)
+                val pFirst = Vec3(orderedPts.first().x, orderedPts.first().y, nominalZ)
                 val len = pLast.distanceTo(pFirst)
                 if (len > 0.015f) {
                     segments.add(
@@ -2052,6 +2127,285 @@ object SlicingEngine {
 
     private fun hypot2D(dx: Float, dy: Float): Float = sqrt(dx * dx + dy * dy)
 
+    // =========================================================================
+    // Cura Combing Mode & Travel Obstacle Avoidance Engine
+    // =========================================================================
+
+    private data class CombedTravelResult(
+        val waypoints: List<Vec2>,
+        val isCombed: Boolean,
+        val requiresRetract: Boolean
+    )
+
+    private fun alignClosedPolygonStart(poly: List<Vec2>, referencePt: Vec2): List<Vec2> {
+        if (poly.size < 3) return poly
+        var bestIdx = 0
+        var bestDist = Float.POSITIVE_INFINITY
+        for (i in poly.indices) {
+            val d = poly[i].distanceTo(referencePt)
+            if (d < bestDist) {
+                bestDist = d
+                bestIdx = i
+            }
+        }
+        if (bestIdx == 0) return poly
+        val rotated = ArrayList<Vec2>(poly.size)
+        for (k in poly.indices) {
+            rotated.add(poly[(bestIdx + k) % poly.size])
+        }
+        return rotated
+    }
+
+    private fun segmentsProperlyIntersect(a: Vec2, b: Vec2, c: Vec2, d: Vec2): Boolean {
+        fun ccw(p1: Vec2, p2: Vec2, p3: Vec2): Float =
+            (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x)
+
+        val d1 = ccw(c, d, a)
+        val d2 = ccw(c, d, b)
+        val d3 = ccw(a, b, c)
+        val d4 = ccw(a, b, d)
+        return ((d1 > 1e-4f && d2 < -1e-4f) || (d1 < -1e-4f && d2 > 1e-4f)) &&
+            ((d3 > 1e-4f && d4 < -1e-4f) || (d3 < -1e-4f && d4 > 1e-4f))
+    }
+
+    private fun doesSegmentCrossPolygonBoundary(a: Vec2, b: Vec2, poly: List<Vec2>): Boolean {
+        val n = poly.size
+        if (n < 3) return false
+        for (i in 0 until n) {
+            val p0 = poly[i]
+            val p1 = poly[(i + 1) % n]
+            if (segmentsProperlyIntersect(a, b, p0, p1)) return true
+        }
+        return false
+    }
+
+    private fun isChordInsidePolygon(a: Vec2, b: Vec2, poly: List<Vec2>): Boolean {
+        if (doesSegmentCrossPolygonBoundary(a, b, poly)) return false
+        val mid = (a + b) * 0.5f
+        return isPointInPolygon(mid, poly)
+    }
+
+    private fun findClosestPolygonVertexIndex(pt: Vec2, poly: List<Vec2>): Int {
+        var bestIdx = 0
+        var bestDist = Float.POSITIVE_INFINITY
+        for (i in poly.indices) {
+            val d = poly[i].distanceTo(pt)
+            if (d < bestDist) {
+                bestDist = d
+                bestIdx = i
+            }
+        }
+        return bestIdx
+    }
+
+    private fun polylineLength(pts: List<Vec2>): Float {
+        var len = 0f
+        for (i in 0 until pts.size - 1) {
+            len += pts[i].distanceTo(pts[i + 1])
+        }
+        return len
+    }
+
+    /**
+     * Routes a combing travel path inside `poly` from `start` to `end` by walking the shorter side
+     * of an inward-offset guide polygon and applying visibility string-pulling shortcuts.
+     */
+    private fun buildBoundaryCombedPath(
+        start: Vec2,
+        end: Vec2,
+        poly: List<Vec2>,
+        lineWidthMm: Float
+    ): List<Vec2> {
+        val guidePoly = offsetPolygonInward(poly, lineWidthMm * 0.45f).ifEmpty { poly }
+        val n = guidePoly.size
+        if (n < 3) return listOf(start, end)
+
+        val iStart = findClosestPolygonVertexIndex(start, guidePoly)
+        val iEnd = findClosestPolygonVertexIndex(end, guidePoly)
+        if (iStart == iEnd) {
+            return listOf(start, guidePoly[iStart], end)
+        }
+
+        // Build forward chain along guidePoly
+        val forward = ArrayList<Vec2>()
+        forward.add(start)
+        var idx = iStart
+        var steps = 0
+        while (idx != iEnd && steps <= n) {
+            forward.add(guidePoly[idx])
+            idx = (idx + 1) % n
+            steps++
+        }
+        forward.add(guidePoly[iEnd])
+        forward.add(end)
+
+        // Build backward chain along guidePoly
+        val backward = ArrayList<Vec2>()
+        backward.add(start)
+        idx = iStart
+        steps = 0
+        while (idx != iEnd && steps <= n) {
+            backward.add(guidePoly[idx])
+            idx = (idx - 1 + n) % n
+            steps++
+        }
+        backward.add(guidePoly[iEnd])
+        backward.add(end)
+
+        val chosen = if (polylineLength(forward) <= polylineLength(backward)) forward else backward
+        return shortcutCombingWaypoints(chosen, poly)
+    }
+
+    /**
+     * Visibility String-Pulling / Funnel Shortcut Pass:
+     * Simplifies a boundary-following combing chain into the shortest taut path that stays strictly inside `poly`.
+     */
+    private fun shortcutCombingWaypoints(chain: List<Vec2>, poly: List<Vec2>): List<Vec2> {
+        if (chain.size <= 2) return chain
+        val out = ArrayList<Vec2>()
+        var curIdx = 0
+        out.add(chain[0])
+
+        while (curIdx < chain.lastIndex) {
+            var furthestVisible = curIdx + 1
+            for (testIdx in chain.lastIndex downTo curIdx + 2) {
+                if (isChordInsidePolygon(chain[curIdx], chain[testIdx], poly)) {
+                    furthestVisible = testIdx
+                    break
+                }
+            }
+            out.add(chain[furthestVisible])
+            curIdx = furthestVisible
+        }
+        return out
+    }
+
+    /**
+     * Routes an open-air travel move around any obstacle polygons (`avoidPrintedPartsWhenTraveling` / `avoidSupportsWhenTraveling`).
+     */
+    private fun detourAroundObstacles(
+        start: Vec2,
+        end: Vec2,
+        obstacles: List<List<Vec2>>
+    ): List<Vec2> {
+        if (obstacles.isEmpty()) return listOf(start, end)
+        var currentPath = listOf(start, end)
+
+        for (obs in obstacles) {
+            if (obs.size < 3) continue
+            // Only detour around obstacles where neither start nor end is strictly inside the obstacle
+            if (isPointInPolygon(start, obs) || isPointInPolygon(end, obs)) continue
+
+            val nextPath = ArrayList<Vec2>()
+            nextPath.add(currentPath[0])
+            for (segIdx in 0 until currentPath.size - 1) {
+                val pA = currentPath[segIdx]
+                val pB = currentPath[segIdx + 1]
+                if (doesSegmentCrossPolygonBoundary(pA, pB, obs)) {
+                    val n = obs.size
+                    val iStart = findClosestPolygonVertexIndex(pA, obs)
+                    val iEnd = findClosestPolygonVertexIndex(pB, obs)
+
+                    val fwd = ArrayList<Vec2>()
+                    var k = iStart
+                    var steps = 0
+                    while (k != iEnd && steps <= n) {
+                        fwd.add(obs[k])
+                        k = (k + 1) % n
+                        steps++
+                    }
+                    fwd.add(obs[iEnd])
+
+                    val bwd = ArrayList<Vec2>()
+                    k = iStart
+                    steps = 0
+                    while (k != iEnd && steps <= n) {
+                        bwd.add(obs[k])
+                        k = (k - 1 + n) % n
+                        steps++
+                    }
+                    bwd.add(obs[iEnd])
+
+                    val detour = if (polylineLength(listOf(pA) + fwd + listOf(pB)) <=
+                        polylineLength(listOf(pA) + bwd + listOf(pB))
+                    ) fwd else bwd
+
+                    nextPath.addAll(detour)
+                }
+                nextPath.add(pB)
+            }
+            currentPath = nextPath
+        }
+        return currentPath
+    }
+
+    /**
+     * Cura Combing Mode path-routing & retraction decision algorithm:
+     * 1. Checks if `start` and `end` lie within the same allowed combing region (`combingPolygons`).
+     * 2. If the straight chord stays inside the combing region, combs directly without crossing walls.
+     * 3. If the straight chord crosses a concave wall/hole, routes along the interior contour boundary with string-pulling shortcuts.
+     * 4. If travelling between separate islands and `avoidPrintedPartsWhenTraveling` / `avoidSupportsWhenTraveling` is enabled,
+     *    detours around obstacle boundaries with `travelAvoidDistanceMm` clearance.
+     * 5. Evaluates `maxCombDistanceWithNoRetractMm` and `retractBeforeOuterWall` to decide whether retraction is required.
+     */
+    private fun computeCuraCombedTravel(
+        start: Vec2,
+        end: Vec2,
+        combingPolygons: List<List<Vec2>>,
+        obstaclePolygons: List<List<Vec2>>,
+        targetType: ToolpathType,
+        lineWidthMm: Float,
+        process: ProcessProfile
+    ): CombedTravelResult {
+        if (process.combingMode == CombingMode.OFF) {
+            return CombedTravelResult(
+                waypoints = listOf(start, end),
+                isCombed = false,
+                requiresRetract = true
+            )
+        }
+
+        val snapMargin = lineWidthMm * 1.6f
+        val hostPoly = combingPolygons.firstOrNull { poly ->
+            val (dStart, _) = signedDistanceToContours(start, listOf(poly))
+            val (dEnd, _) = signedDistanceToContours(end, listOf(poly))
+            dStart <= snapMargin && dEnd <= snapMargin
+        }
+
+        val waypoints: List<Vec2>
+        val isCombed: Boolean
+
+        if (hostPoly != null) {
+            isCombed = true
+            waypoints = if (isChordInsidePolygon(start, end, hostPoly)) {
+                listOf(start, end)
+            } else {
+                buildBoundaryCombedPath(start, end, hostPoly, lineWidthMm)
+            }
+        } else {
+            isCombed = false
+            waypoints = if (obstaclePolygons.isNotEmpty()) {
+                detourAroundObstacles(start, end, obstaclePolygons)
+            } else {
+                listOf(start, end)
+            }
+        }
+
+        val totalDist = polylineLength(waypoints)
+        val requiresRetract = when {
+            !isCombed -> true
+            process.retractBeforeOuterWall && targetType == ToolpathType.OUTER_WALL -> true
+            process.maxCombDistanceWithNoRetractMm > 0f && totalDist > process.maxCombDistanceWithNoRetractMm -> true
+            else -> false
+        }
+
+        return CombedTravelResult(
+            waypoints = waypoints,
+            isCombed = isCombed,
+            requiresRetract = requiresRetract
+        )
+    }
+
     private fun intersectTrianglesAtZ(triangles: List<Triangle>, rawZ: Float): List<Segment2D> {
         // Perturb Z by a tiny irrational-like epsilon so the slicing plane never lands dead-on a vertex or horizontal face
         val z = rawZ + 0.000137f
@@ -2417,6 +2771,8 @@ object SlicingEngine {
         sb.append("; bottom_shell_layers = ${process.bottomShellLayers}\n")
         sb.append("; sparse_infill_density = ${process.sparseInfillDensityPercent}%\n")
         sb.append("; sparse_infill_pattern = ${process.sparseInfillPattern.label}\n")
+        sb.append("; combing_mode = ${process.combingMode.label}\n")
+        sb.append("; max_comb_distance_with_no_retract = ${process.maxCombDistanceWithNoRetractMm}\n")
         sb.append("; total_layers = ${layers.size}\n")
         sb.append("; HEADER_BLOCK_END\n\n")
 
@@ -2452,6 +2808,15 @@ object SlicingEngine {
             }
 
             var activeType: ToolpathType? = null
+            var isRetracted = false
+            val retractLen = printer.retractionLengthMm.coerceIn(0f, 10f)
+            val retractFeed = (printer.retractionSpeedMmS.coerceAtLeast(10f) * 60f).toInt()
+            val effectiveZHop = if (process.zHopWhenRetracted) {
+                process.zHopHeightMm.coerceIn(0f, 3.0f)
+            } else {
+                0f
+            }
+
             for (seg in layer.segments) {
                 totalSegments++
                 val dist = seg.start.distanceTo(seg.end)
@@ -2463,18 +2828,36 @@ object SlicingEngine {
                     supportAndBrimExtrusionMm += seg.extrusionMm
                 }
 
-                if (seg.type != activeType && seg.type != ToolpathType.TRAVEL) {
-                    activeType = seg.type
-                    sb.append(";TYPE:${seg.type.gcodeComment}\n")
-                }
-
                 val gx = seg.end.x + bedCenterX
                 val gy = seg.end.y + bedCenterY
                 val feedrate = (seg.speedMmS * 60f).toInt()
 
                 if (seg.type == ToolpathType.TRAVEL || seg.extrusionMm <= 0f) {
-                    sb.append(String.format(Locale.US, "G0 X%.3f Y%.3f Z%.3f F%d\n", gx, gy, seg.end.z, feedrate))
+                    if (seg.requiresRetract && !isRetracted && retractLen > 0.01f) {
+                        sb.append(String.format(Locale.US, "G1 E-%.4f F%d ; retract\n", retractLen, retractFeed))
+                        isRetracted = true
+                    }
+                    val zTravel = if (isRetracted && effectiveZHop > 0.01f && (!process.zHopOnlyOverPrintedParts || !seg.isCombed)) {
+                        seg.end.z + effectiveZHop
+                    } else {
+                        seg.end.z
+                    }
+                    if (process.verboseGcode && seg.isCombed) {
+                        sb.append(";COMBED_TRAVEL\n")
+                    }
+                    sb.append(String.format(Locale.US, "G0 X%.3f Y%.3f Z%.3f F%d\n", gx, gy, zTravel, feedrate))
                 } else {
+                    if (isRetracted) {
+                        if (effectiveZHop > 0.01f) {
+                            sb.append(String.format(Locale.US, "G0 Z%.3f F1800 ; restore Z hop\n", seg.end.z))
+                        }
+                        sb.append(String.format(Locale.US, "G1 E%.4f F%d ; unretract\n", retractLen, retractFeed))
+                        isRetracted = false
+                    }
+                    if (seg.type != activeType) {
+                        activeType = seg.type
+                        sb.append(";TYPE:${seg.type.gcodeComment}\n")
+                    }
                     sb.append(
                         String.format(
                             Locale.US,

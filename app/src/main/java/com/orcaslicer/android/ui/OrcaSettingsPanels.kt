@@ -94,6 +94,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.orcaslicer.android.model.BridgeCounterboreMode
 import com.orcaslicer.android.model.BrimType
+import com.orcaslicer.android.model.CombingMode
 import com.orcaslicer.android.model.DraftShieldMode
 import com.orcaslicer.android.model.ExtraBridgeLayersMode
 import com.orcaslicer.android.model.FilterSmallBridgesMode
@@ -2420,10 +2421,10 @@ fun FullProcessSettingsCard(
                 )
             }
 
-            if (matches("travel speed", "travel")) {
-                OrcaSectionGroupHeader(Icons.Default.Speed, "Travel speed")
+            if (matches("travel speed", "travel", "combing", "retract before outer wall", "avoid printed parts", "avoid supports", "z hop", "layer start")) {
+                OrcaSectionGroupHeader(Icons.Default.Speed, "Travel & Combing Mode")
                 OrcaParamNumberRow(
-                    label = "Travel",
+                    label = "Travel speed",
                     value = proc.travelSpeedMmS,
                     unitText = "mm/s",
                     range = 50f..800f,
@@ -2431,6 +2432,89 @@ fun FullProcessSettingsCard(
                     decimals = 0,
                     onValueChange = { v -> viewModel.updateProcess { it.copy(travelSpeedMmS = v) } }
                 )
+                OrcaParamDropdownRow(
+                    label = "Combing mode",
+                    options = CombingMode.entries,
+                    selected = proc.combingMode,
+                    optionLabel = { it.label },
+                    onSelect = { cm -> viewModel.updateProcess { it.copy(combingMode = cm) } }
+                )
+                if (proc.combingMode != CombingMode.OFF) {
+                    OrcaParamNumberRow(
+                        label = "Max comb distance with no retract",
+                        value = proc.maxCombDistanceWithNoRetractMm,
+                        unitText = "mm",
+                        range = 0f..200f,
+                        step = 5f,
+                        decimals = 1,
+                        onValueChange = { v -> viewModel.updateProcess { it.copy(maxCombDistanceWithNoRetractMm = v) } }
+                    )
+                    OrcaParamCheckboxRow(
+                        label = "Retract before outer wall",
+                        checked = proc.retractBeforeOuterWall,
+                        onCheckedChange = { b -> viewModel.updateProcess { it.copy(retractBeforeOuterWall = b) } }
+                    )
+                    OrcaParamCheckboxRow(
+                        label = "Avoid printed parts when traveling",
+                        checked = proc.avoidPrintedPartsWhenTraveling,
+                        onCheckedChange = { b -> viewModel.updateProcess { it.copy(avoidPrintedPartsWhenTraveling = b) } }
+                    )
+                    OrcaParamCheckboxRow(
+                        label = "Avoid supports when traveling",
+                        checked = proc.avoidSupportsWhenTraveling,
+                        onCheckedChange = { b -> viewModel.updateProcess { it.copy(avoidSupportsWhenTraveling = b) } }
+                    )
+                    if (proc.avoidPrintedPartsWhenTraveling || proc.avoidSupportsWhenTraveling) {
+                        OrcaParamNumberRow(
+                            label = "Travel avoid distance",
+                            value = proc.travelAvoidDistanceMm,
+                            unitText = "mm",
+                            range = 0.1f..5.0f,
+                            step = 0.125f,
+                            decimals = 3,
+                            onValueChange = { v -> viewModel.updateProcess { it.copy(travelAvoidDistanceMm = v) } }
+                        )
+                    }
+                }
+                OrcaParamNumberRow(
+                    label = "Layer start X",
+                    value = proc.layerStartXMm,
+                    unitText = "mm",
+                    range = -300f..300f,
+                    step = 5f,
+                    decimals = 1,
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(layerStartXMm = v) } }
+                )
+                OrcaParamNumberRow(
+                    label = "Layer start Y",
+                    value = proc.layerStartYMm,
+                    unitText = "mm",
+                    range = -300f..300f,
+                    step = 5f,
+                    decimals = 1,
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(layerStartYMm = v) } }
+                )
+                OrcaParamCheckboxRow(
+                    label = "Z hop when retracted",
+                    checked = proc.zHopWhenRetracted,
+                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(zHopWhenRetracted = b) } }
+                )
+                if (proc.zHopWhenRetracted) {
+                    OrcaParamCheckboxRow(
+                        label = "Z hop only over printed parts",
+                        checked = proc.zHopOnlyOverPrintedParts,
+                        onCheckedChange = { b -> viewModel.updateProcess { it.copy(zHopOnlyOverPrintedParts = b) } }
+                    )
+                    OrcaParamNumberRow(
+                        label = "Z hop height",
+                        value = proc.zHopHeightMm,
+                        unitText = "mm",
+                        range = 0.05f..3.0f,
+                        step = 0.05f,
+                        decimals = 2,
+                        onValueChange = { v -> viewModel.updateProcess { it.copy(zHopHeightMm = v) } }
+                    )
+                }
             }
 
             if (matches("acceleration", "normal printing")) {
@@ -2900,132 +2984,133 @@ fun FullProcessSettingsCard(
         // =====================================================================
         if (state.activeProcessTab == ProcessCategoryTab.MULTIMATERIAL || query.isNotEmpty()) {
             if (matches("prime tower", "wipe tower", "flush", "ooze", "interlocking", "filament for features")) {
+                val mm = proc.multimaterial
                 OrcaSectionGroupHeader(Icons.Default.ColorLens, "Prime tower")
                 OrcaParamCheckboxRow(
                     label = "Enable",
-                    checked = proc.enablePrimeTower,
-                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(enablePrimeTower = b) } }
+                    checked = mm.enablePrimeTower,
+                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(enablePrimeTower = b)) } }
                 )
                 OrcaParamCheckboxRow(
                     label = "Skip points",
-                    checked = proc.primeTowerSkipPoints,
-                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(primeTowerSkipPoints = b) } }
+                    checked = mm.primeTowerSkipPoints,
+                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerSkipPoints = b)) } }
                 )
                 OrcaParamCheckboxRow(
                     label = "Enable tower interface features",
-                    checked = proc.primeTowerInterfaceFeatures,
-                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(primeTowerInterfaceFeatures = b) } }
+                    checked = mm.primeTowerInterfaceFeatures,
+                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerInterfaceFeatures = b)) } }
                 )
                 OrcaParamCheckboxRow(
                     label = "Internal ribs",
-                    checked = proc.primeTowerInternalRibs,
-                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(primeTowerInternalRibs = b) } }
+                    checked = mm.primeTowerInternalRibs,
+                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerInternalRibs = b)) } }
                 )
                 OrcaParamNumberRow(
                     label = "Width",
-                    value = proc.primeTowerWidthMm,
+                    value = mm.primeTowerWidthMm,
                     unitText = "mm",
                     range = 10f..120f,
                     step = 5f,
                     decimals = 0,
-                    onValueChange = { v -> viewModel.updateProcess { it.copy(primeTowerWidthMm = v) } }
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerWidthMm = v)) } }
                 )
                 OrcaParamNumberRow(
                     label = "Brim width",
-                    value = proc.primeTowerBrimWidthMm,
+                    value = mm.primeTowerBrimWidthMm,
                     unitText = "mm",
                     range = 0f..15f,
                     step = 1f,
-                    onValueChange = { v -> viewModel.updateProcess { it.copy(primeTowerBrimWidthMm = v) } }
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerBrimWidthMm = v)) } }
                 )
                 OrcaParamNumberRow(
                     label = "Infill gap",
-                    value = proc.primeTowerInfillGapPercent.toFloat(),
+                    value = mm.primeTowerInfillGapPercent.toFloat(),
                     unitText = "%",
                     range = 50f..300f,
                     step = 10f,
                     decimals = 0,
-                    onValueChange = { v -> viewModel.updateProcess { it.copy(primeTowerInfillGapPercent = v.toInt()) } }
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerInfillGapPercent = v.toInt())) } }
                 )
                 OrcaParamNumberRow(
                     label = "Wipe tower rotation angle",
-                    value = proc.primeTowerRotationAngleDeg.toFloat(),
+                    value = mm.primeTowerRotationAngleDeg.toFloat(),
                     unitText = "°",
                     range = -180f..180f,
                     step = 15f,
                     decimals = 0,
-                    onValueChange = { v -> viewModel.updateProcess { it.copy(primeTowerRotationAngleDeg = v.toInt()) } }
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerRotationAngleDeg = v.toInt())) } }
                 )
                 OrcaParamNumberRow(
                     label = "Maximal bridging distance",
-                    value = proc.primeTowerMaxBridgingDistMm,
+                    value = mm.primeTowerMaxBridgingDistMm,
                     unitText = "mm",
                     range = 1f..50f,
                     step = 2f,
                     decimals = 0,
-                    onValueChange = { v -> viewModel.updateProcess { it.copy(primeTowerMaxBridgingDistMm = v) } }
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerMaxBridgingDistMm = v)) } }
                 )
                 OrcaParamNumberRow(
                     label = "Wipe tower purge lines spacing",
-                    value = proc.primeTowerPurgeLinesSpacingPercent.toFloat(),
+                    value = mm.primeTowerPurgeLinesSpacingPercent.toFloat(),
                     unitText = "%",
                     range = 50f..200f,
                     step = 5f,
                     decimals = 0,
-                    onValueChange = { v -> viewModel.updateProcess { it.copy(primeTowerPurgeLinesSpacingPercent = v.toInt()) } }
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerPurgeLinesSpacingPercent = v.toInt())) } }
                 )
                 OrcaParamNumberRow(
                     label = "Extra flow for purging",
-                    value = proc.primeTowerExtraFlowPurgingPercent.toFloat(),
+                    value = mm.primeTowerExtraFlowPurgingPercent.toFloat(),
                     unitText = "%",
                     range = 50f..200f,
                     step = 5f,
                     decimals = 0,
-                    onValueChange = { v -> viewModel.updateProcess { it.copy(primeTowerExtraFlowPurgingPercent = v.toInt()) } }
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerExtraFlowPurgingPercent = v.toInt())) } }
                 )
                 OrcaParamNumberRow(
                     label = "Maximum wipe tower print speed",
-                    value = proc.primeTowerMaxPrintSpeedMmS,
+                    value = mm.primeTowerMaxPrintSpeedMmS,
                     unitText = "mm/s",
                     range = 10f..300f,
                     step = 10f,
                     decimals = 0,
-                    onValueChange = { v -> viewModel.updateProcess { it.copy(primeTowerMaxPrintSpeedMmS = v) } }
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerMaxPrintSpeedMmS = v)) } }
                 )
                 OrcaParamDropdownRow(
                     label = "Wall type",
                     options = WipeTowerWallType.entries,
-                    selected = proc.primeTowerWallType,
+                    selected = mm.primeTowerWallType,
                     optionLabel = { it.label },
-                    onSelect = { wt -> viewModel.updateProcess { it.copy(primeTowerWallType = wt) } }
+                    onSelect = { wt -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerWallType = wt)) } }
                 )
                 OrcaParamNumberRow(
                     label = "Extra rib length",
-                    value = proc.primeTowerExtraRibLengthMm,
+                    value = mm.primeTowerExtraRibLengthMm,
                     unitText = "mm",
                     range = 0f..50f,
                     step = 2f,
                     decimals = 0,
-                    onValueChange = { v -> viewModel.updateProcess { it.copy(primeTowerExtraRibLengthMm = v) } }
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerExtraRibLengthMm = v)) } }
                 )
                 OrcaParamNumberRow(
                     label = "Rib width",
-                    value = proc.primeTowerRibWidthMm,
+                    value = mm.primeTowerRibWidthMm,
                     unitText = "mm",
                     range = 1f..30f,
                     step = 1f,
                     decimals = 0,
-                    onValueChange = { v -> viewModel.updateProcess { it.copy(primeTowerRibWidthMm = v) } }
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerRibWidthMm = v)) } }
                 )
                 OrcaParamCheckboxRow(
                     label = "Fillet wall",
-                    checked = proc.primeTowerFilletWall,
-                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(primeTowerFilletWall = b) } }
+                    checked = mm.primeTowerFilletWall,
+                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerFilletWall = b)) } }
                 )
                 OrcaParamCheckboxRow(
                     label = "No sparse layers (beta)",
-                    checked = proc.primeTowerNoSparseLayers,
-                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(primeTowerNoSparseLayers = b) } }
+                    checked = mm.primeTowerNoSparseLayers,
+                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(primeTowerNoSparseLayers = b)) } }
                 )
 
                 OrcaSectionGroupHeader(Icons.Default.Palette, "Filament for Features")
@@ -3033,98 +3118,98 @@ fun FullProcessSettingsCard(
                 OrcaParamDropdownRow(
                     label = "Outer walls",
                     options = filChoices,
-                    selected = proc.filamentOuterWalls,
+                    selected = mm.filamentOuterWalls,
                     optionLabel = { it },
-                    onSelect = { v -> viewModel.updateProcess { it.copy(filamentOuterWalls = v) } }
+                    onSelect = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(filamentOuterWalls = v)) } }
                 )
                 OrcaParamDropdownRow(
                     label = "Inner walls",
                     options = filChoices,
-                    selected = proc.filamentInnerWalls,
+                    selected = mm.filamentInnerWalls,
                     optionLabel = { it },
-                    onSelect = { v -> viewModel.updateProcess { it.copy(filamentInnerWalls = v) } }
+                    onSelect = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(filamentInnerWalls = v)) } }
                 )
                 OrcaParamDropdownRow(
                     label = "Infill",
                     options = filChoices,
-                    selected = proc.filamentInfill,
+                    selected = mm.filamentInfill,
                     optionLabel = { it },
-                    onSelect = { v -> viewModel.updateProcess { it.copy(filamentInfill = v) } }
+                    onSelect = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(filamentInfill = v)) } }
                 )
                 OrcaParamDropdownRow(
                     label = "Internal solid infill",
                     options = filChoices,
-                    selected = proc.filamentInternalSolidInfill,
+                    selected = mm.filamentInternalSolidInfill,
                     optionLabel = { it },
-                    onSelect = { v -> viewModel.updateProcess { it.copy(filamentInternalSolidInfill = v) } }
+                    onSelect = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(filamentInternalSolidInfill = v)) } }
                 )
                 OrcaParamDropdownRow(
                     label = "Top surface",
                     options = filChoices,
-                    selected = proc.filamentTopSurface,
+                    selected = mm.filamentTopSurface,
                     optionLabel = { it },
-                    onSelect = { v -> viewModel.updateProcess { it.copy(filamentTopSurface = v) } }
+                    onSelect = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(filamentTopSurface = v)) } }
                 )
                 OrcaParamDropdownRow(
                     label = "Bottom surface",
                     options = filChoices,
-                    selected = proc.filamentBottomSurface,
+                    selected = mm.filamentBottomSurface,
                     optionLabel = { it },
-                    onSelect = { v -> viewModel.updateProcess { it.copy(filamentBottomSurface = v) } }
+                    onSelect = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(filamentBottomSurface = v)) } }
                 )
                 OrcaParamDropdownRow(
                     label = "Wipe tower",
                     options = filChoices,
-                    selected = proc.filamentWipeTower,
+                    selected = mm.filamentWipeTower,
                     optionLabel = { it },
-                    onSelect = { v -> viewModel.updateProcess { it.copy(filamentWipeTower = v) } }
+                    onSelect = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(filamentWipeTower = v)) } }
                 )
 
                 OrcaSectionGroupHeader(Icons.Default.Shield, "Ooze prevention")
                 OrcaParamCheckboxRow(
                     label = "Enable",
-                    checked = proc.enableOozeShield,
-                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(enableOozeShield = b) } }
+                    checked = mm.enableOozeShield,
+                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(enableOozeShield = b)) } }
                 )
 
                 OrcaSectionGroupHeader(Icons.Default.Sync, "Flush options")
                 OrcaParamCheckboxRow(
                     label = "Flush into objects' infill",
-                    checked = proc.flushIntoInfill,
-                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(flushIntoInfill = b) } }
+                    checked = mm.flushIntoInfill,
+                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(flushIntoInfill = b)) } }
                 )
                 OrcaParamCheckboxRow(
                     label = "Flush into objects' support",
-                    checked = proc.flushIntoSupport,
-                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(flushIntoSupport = b) } }
+                    checked = mm.flushIntoSupport,
+                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(flushIntoSupport = b)) } }
                 )
 
                 OrcaSectionGroupHeader(Icons.Default.Tune, "Advanced")
                 OrcaParamCheckboxRow(
                     label = "Use beam interlocking",
-                    checked = proc.useBeamInterlocking,
-                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(useBeamInterlocking = b) } }
+                    checked = mm.useBeamInterlocking,
+                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(useBeamInterlocking = b)) } }
                 )
                 OrcaParamCheckboxRow(
                     label = "Interface shells",
-                    checked = proc.interfaceShells,
-                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(interfaceShells = b) } }
+                    checked = mm.interfaceShells,
+                    onCheckedChange = { b -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(interfaceShells = b)) } }
                 )
                 OrcaParamNumberRow(
                     label = "Maximum width of a segmented region",
-                    value = proc.maxWidthSegmentedRegionMm,
+                    value = mm.maxWidthSegmentedRegionMm,
                     unitText = "mm",
                     range = 0f..50f,
                     step = 1f,
-                    onValueChange = { v -> viewModel.updateProcess { it.copy(maxWidthSegmentedRegionMm = v) } }
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(maxWidthSegmentedRegionMm = v)) } }
                 )
                 OrcaParamNumberRow(
                     label = "Interlocking depth of a segmented region",
-                    value = proc.interlockingDepthSegmentedRegionMm,
+                    value = mm.interlockingDepthSegmentedRegionMm,
                     unitText = "mm",
                     range = 0f..20f,
                     step = 0.5f,
-                    onValueChange = { v -> viewModel.updateProcess { it.copy(interlockingDepthSegmentedRegionMm = v) } }
+                    onValueChange = { v -> viewModel.updateProcess { it.copy(multimaterial = it.multimaterial.copy(interlockingDepthSegmentedRegionMm = v)) } }
                 )
             }
         }

@@ -322,4 +322,51 @@ class OrcaSlicerEngineTest {
         )
         assertEquals(170.0f, highPriceFilament.spoolTotalCost, 0.01f)
     }
+
+    @Test
+    fun `Cura Combing Mode routes travel moves inside model and controls retractions`() = runTest {
+        val torusObj = SceneObject(
+            id = "torus-comb",
+            name = "TorusCombing",
+            sourceFormat = "PRIMITIVE",
+            mesh = ProceduralMeshes.createTorus(majorRadius = 16f, minorRadius = 5f)
+        )
+
+        val combingNotInSkinProcess = BuiltInPresets.processes.first().copy(
+            combingMode = com.orcaslicer.android.model.CombingMode.NOT_IN_SKIN,
+            maxCombDistanceWithNoRetractMm = 30.0f,
+            retractBeforeOuterWall = true,
+            avoidPrintedPartsWhenTraveling = true,
+            travelAvoidDistanceMm = 0.625f
+        )
+
+        val combingOffProcess = combingNotInSkinProcess.copy(
+            combingMode = com.orcaslicer.android.model.CombingMode.OFF
+        )
+
+        val combedSlice = SlicingEngine.sliceScene(
+            objects = listOf(torusObj),
+            printer = BuiltInPresets.printers.first(),
+            filament = BuiltInPresets.filaments.first(),
+            process = combingNotInSkinProcess
+        ).getOrThrow()
+
+        val uncombedSlice = SlicingEngine.sliceScene(
+            objects = listOf(torusObj),
+            printer = BuiltInPresets.printers.first(),
+            filament = BuiltInPresets.filaments.first(),
+            process = combingOffProcess
+        ).getOrThrow()
+
+        val combedTravelCount = combedSlice.layers.sumOf { l ->
+            l.segments.count { it.type == com.orcaslicer.android.model.ToolpathType.TRAVEL && it.isCombed }
+        }
+        val uncombedTravelCount = uncombedSlice.layers.sumOf { l ->
+            l.segments.count { it.type == com.orcaslicer.android.model.ToolpathType.TRAVEL && it.isCombed }
+        }
+
+        assertTrue("Combing NOT_IN_SKIN must produce combed interior travel moves ($combedTravelCount)", combedTravelCount > 10)
+        assertEquals("Combing OFF must produce zero combed travel moves", 0, uncombedTravelCount)
+        assertTrue("G-code header must record combing_mode", combedSlice.gcodeText.contains("; combing_mode = Not in Skin"))
+    }
 }

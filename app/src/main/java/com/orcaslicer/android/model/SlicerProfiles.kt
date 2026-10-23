@@ -192,6 +192,14 @@ enum class IntraLayerOrder(val label: String) {
     AS_ARRANGED("As arranged")
 }
 
+enum class CombingMode(val label: String) {
+    OFF("Off"),
+    ALL("All"),
+    NOT_IN_SKIN("Not in Skin"),
+    NOT_ON_OUTER_SURFACE("Not on Outer Surface"),
+    WITHIN_INFILL("Within Infill")
+}
+
 data class PrinterProfile(
     val id: String,
     val vendor: String = "Generic",
@@ -414,6 +422,18 @@ data class ProcessProfile(
     val bridgeSpeedMmS: Float = 50f,
     val internalBridgeSpeedPercent: Int = 150,
     val travelSpeedMmS: Float = 350f,
+    // Cura Travel & Combing Mode settings
+    val combingMode: CombingMode = CombingMode.NOT_IN_SKIN,
+    val maxCombDistanceWithNoRetractMm: Float = 30.0f,
+    val retractBeforeOuterWall: Boolean = true,
+    val avoidPrintedPartsWhenTraveling: Boolean = true,
+    val avoidSupportsWhenTraveling: Boolean = false,
+    val travelAvoidDistanceMm: Float = 0.625f,
+    val layerStartXMm: Float = 0.0f,
+    val layerStartYMm: Float = 0.0f,
+    val zHopWhenRetracted: Boolean = false,
+    val zHopOnlyOverPrintedParts: Boolean = false,
+    val zHopHeightMm: Float = 0.20f,
     val defaultAccelerationMmS2: Float = 10000f,
     val outerWallAccelerationMmS2: Float = 5000f,
     val innerWallAccelerationMmS2: Float = 8000f,
@@ -471,39 +491,8 @@ data class ProcessProfile(
     val treeSupportWallLoops: Int = 2,
     val treeSupportBrimWidthMm: Float = 3.0f,
 
-    // 5. Multimaterial
-    val enablePrimeTower: Boolean = false,
-    val primeTowerSkipPoints: Boolean = false,
-    val primeTowerInterfaceFeatures: Boolean = false,
-    val primeTowerInternalRibs: Boolean = true,
-    val primeTowerWidthMm: Float = 60f,
-    val primeTowerBrimWidthMm: Float = 3.0f,
-    val primeTowerInfillGapPercent: Int = 150,
-    val primeTowerRotationAngleDeg: Int = 0,
-    val primeTowerMaxBridgingDistMm: Float = 10f,
-    val primeTowerPurgeLinesSpacingPercent: Int = 100,
-    val primeTowerExtraFlowPurgingPercent: Int = 100,
-    val primeTowerMaxPrintSpeedMmS: Float = 90f,
-    val primeTowerWallType: WipeTowerWallType = WipeTowerWallType.RIB,
-    val primeTowerExtraRibLengthMm: Float = 0f,
-    val primeTowerRibWidthMm: Float = 8f,
-    val primeTowerFilletWall: Boolean = true,
-    val primeTowerNoSparseLayers: Boolean = false,
-    val primeVolumeMm3: Float = 45f,
-    val filamentOuterWalls: String = "Default",
-    val filamentInnerWalls: String = "Default",
-    val filamentInfill: String = "Default",
-    val filamentInternalSolidInfill: String = "Default",
-    val filamentTopSurface: String = "Default",
-    val filamentBottomSurface: String = "Default",
-    val filamentWipeTower: String = "Default",
-    val enableOozeShield: Boolean = false,
-    val flushIntoInfill: Boolean = false,
-    val flushIntoSupport: Boolean = true,
-    val useBeamInterlocking: Boolean = false,
-    val interfaceShells: Boolean = false,
-    val maxWidthSegmentedRegionMm: Float = 0f,
-    val interlockingDepthSegmentedRegionMm: Float = 0f,
+    // 5. Multimaterial (grouped to stay well below the JVM 255-parameter constructor slot limit)
+    val multimaterial: MultimaterialSettings = MultimaterialSettings(),
 
     // 6. Others
     val skirtLoops: Int = 0,
@@ -537,6 +526,41 @@ data class ProcessProfile(
     val notes: String = ""
 )
 
+data class MultimaterialSettings(
+    val enablePrimeTower: Boolean = false,
+    val primeTowerSkipPoints: Boolean = false,
+    val primeTowerInterfaceFeatures: Boolean = false,
+    val primeTowerInternalRibs: Boolean = true,
+    val primeTowerWidthMm: Float = 60f,
+    val primeTowerBrimWidthMm: Float = 3.0f,
+    val primeTowerInfillGapPercent: Int = 150,
+    val primeTowerRotationAngleDeg: Int = 0,
+    val primeTowerMaxBridgingDistMm: Float = 10f,
+    val primeTowerPurgeLinesSpacingPercent: Int = 100,
+    val primeTowerExtraFlowPurgingPercent: Int = 100,
+    val primeTowerMaxPrintSpeedMmS: Float = 90f,
+    val primeTowerWallType: WipeTowerWallType = WipeTowerWallType.RIB,
+    val primeTowerExtraRibLengthMm: Float = 0f,
+    val primeTowerRibWidthMm: Float = 8f,
+    val primeTowerFilletWall: Boolean = true,
+    val primeTowerNoSparseLayers: Boolean = false,
+    val primeVolumeMm3: Float = 45f,
+    val filamentOuterWalls: String = "Default",
+    val filamentInnerWalls: String = "Default",
+    val filamentInfill: String = "Default",
+    val filamentInternalSolidInfill: String = "Default",
+    val filamentTopSurface: String = "Default",
+    val filamentBottomSurface: String = "Default",
+    val filamentWipeTower: String = "Default",
+    val enableOozeShield: Boolean = false,
+    val flushIntoInfill: Boolean = false,
+    val flushIntoSupport: Boolean = true,
+    val useBeamInterlocking: Boolean = false,
+    val interfaceShells: Boolean = false,
+    val maxWidthSegmentedRegionMm: Float = 0f,
+    val interlockingDepthSegmentedRegionMm: Float = 0f
+)
+
 enum class ToolpathType(
     val gcodeComment: String,
     val displayName: String,
@@ -562,7 +586,9 @@ data class ToolpathSegment(
     val extrusionMm: Float,
     val speedMmS: Float,
     val layerIndex: Int,
-    val widthMm: Float = 0.42f
+    val widthMm: Float = 0.42f,
+    val isCombed: Boolean = false,
+    val requiresRetract: Boolean = false
 )
 
 data class SliceLayer(

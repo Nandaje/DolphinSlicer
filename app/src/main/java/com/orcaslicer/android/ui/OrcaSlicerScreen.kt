@@ -778,7 +778,7 @@ private fun OrcaTopMenuAndActionBar(
                         OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
                         Column {
                             Text(
-                                text = "DolphinSlicer v1.1.1",
+                                text = "DolphinSlicer v1.1.2",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = OrcaTealBright
