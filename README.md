@@ -49,3 +49,14 @@ The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
 - **[@Nandaje](https://github.com/Nandaje)** — Creator & Lead Maintainer
 - **Google Gemini 4 Antigravity** *(Google DeepMind)* — AI Engineering & Architecture Contributor
 
+---
+
+## ☕ Support & Donation
+
+If you find **DolphinSlicer** useful for your 3D printing workflow, consider supporting ongoing development:
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/nandaje)
+
+- **Buy Me a Coffee**: [https://buymeacoffee.com/nandaje](https://buymeacoffee.com/nandaje)
+
+

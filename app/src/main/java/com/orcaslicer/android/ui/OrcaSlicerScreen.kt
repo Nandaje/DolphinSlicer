@@ -315,11 +315,11 @@ fun OrcaSlicerScreen(viewModel: OrcaViewModel) {
                                         .fillMaxSize()
                                         .onSizeChanged { workspaceHeightPx = it.height.toFloat() }
                                 ) {
-                                    // 3D Viewport stays fixed in the background; bottom padding reserves room for the collapsed bar
+                                    // 3D Viewport stays fixed in the background; bottom padding reserves full room for the collapsed bar
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .padding(bottom = 84.dp)
+                                            .padding(bottom = 108.dp)
                                     ) {
                                         ViewportWithTouchOverlays(
                                             state = state,
@@ -436,6 +436,7 @@ private fun OrcaMobileReferenceHeader(
     var showProcessDropdown by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showHardwareSelectors by remember { mutableStateOf(true) }
+    val uriContext = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -507,7 +508,7 @@ private fun OrcaMobileReferenceHeader(
                                 .padding(horizontal = 3.dp, vertical = 0.5.dp)
                         ) {
                             Text(
-                                text = "v1.2.0",
+                                text = "v1.2.1",
                                 fontSize = 8.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = OrcaTealBright,
@@ -632,6 +633,21 @@ private fun OrcaMobileReferenceHeader(
                         }
                     )
                     HorizontalDivider()
+                    DropdownMenuItem(
+                        leadingIcon = { Text("☕", fontSize = 15.sp) },
+                        text = { Text("Support / Buy Me a Coffee (buymeacoffee.com/nandaje)") },
+                        onClick = {
+                            showMainMenu = false
+                            runCatching {
+                                uriContext.startActivity(
+                                    android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse("https://buymeacoffee.com/nandaje")
+                                    )
+                                )
+                            }
+                        }
+                    )
                     DropdownMenuItem(
                         leadingIcon = { OrcaWhaleVectorIcon(modifier = Modifier.size(18.dp)) },
                         text = { Text("About DolphinSlicer & Contributors...") },
@@ -1005,7 +1021,7 @@ private fun OrcaMobileReferenceHeader(
                         OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
                         Column {
                             Text(
-                                text = "DolphinSlicer v1.2.0",
+                                text = "DolphinSlicer v1.2.1",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = OrcaTealBright
@@ -1061,6 +1077,56 @@ private fun OrcaMobileReferenceHeader(
                                 text = "Google DeepMind • AI Engineering & Architecture Contributor",
                                 fontSize = 11.sp,
                                 color = OrcaTextSecondary
+                            )
+                        }
+                    }
+
+                    // Support & Donation Section (buymeacoffee.com/nandaje)
+                    Text(
+                        text = "Support & Donation",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = OrcaTextPrimary
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(OrcaCardBg)
+                            .border(1.dp, Color(0xFFFFDD00).copy(alpha = 0.55f), RoundedCornerShape(8.dp))
+                            .clickable {
+                                runCatching {
+                                    uriContext.startActivity(
+                                        android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse("https://buymeacoffee.com/nandaje")
+                                        )
+                                    )
+                                }
+                            }
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "If you enjoy using DolphinSlicer on Android, consider supporting development:",
+                            fontSize = 11.sp,
+                            color = OrcaTextSecondary
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFFFDD00))
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "☕ Buy Me a Coffee — buymeacoffee.com/nandaje",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF0D0E12)
                             )
                         }
                     }
@@ -1754,12 +1820,13 @@ private fun ViewportWithTouchOverlays(
         }
 
         // 8. Floating Interactive Gizmo Sheet (Move / Scale / Rotate / Cut / Mirror / Measure)
+        // Positioned near the top-left (below the model badge) so it is never hidden behind the bottom bar
         val selObj = state.selectedObject
         if (!isPreview && state.showFloatingGizmoSheet && selObj != null) {
             FloatingGizmoControlCard(
                 modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 42.dp, bottom = 8.dp, end = 8.dp),
+                    .align(Alignment.TopStart)
+                    .padding(start = 42.dp, top = 34.dp, end = 38.dp),
                 state = state,
                 selected = selObj,
                 viewModel = viewModel
@@ -2900,13 +2967,16 @@ private fun FloatingGizmoControlCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(max = 235.dp)
             .border(1.dp, OrcaTealBright.copy(alpha = 0.7f), RoundedCornerShape(14.dp)),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = OrcaGlassBg)
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier
+                .padding(10.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -3436,78 +3506,24 @@ private fun DeviceNetworkPanel(
     var isLoadingPage by remember { mutableStateOf(false) }
     var loadProgress by remember { mutableIntStateOf(0) }
 
-    // 0 = Fluidd Web UI, 1 = Mainsail Web UI, 2 = Direct Printer HTTP Browser (http://<ip>)
-    var webUiMode by remember { mutableIntStateOf(0) }
     var addressBarText by remember {
         val initHost = state.printerHost.trim().ifEmpty { "192.168.1.100" }
-        mutableStateOf(if (initHost.startsWith("http", ignoreCase = true)) initHost else "http://$initHost")
-    }
-    var activeHost by remember {
-        mutableStateOf(
-            state.printerHost.trim()
-                .removePrefix("http://")
-                .removePrefix("https://")
-                .substringBefore("/")
-                .substringBefore(":")
-                .ifEmpty { "192.168.1.100" }
-        )
+        mutableStateOf(if (initHost.startsWith("http://", ignoreCase = true) || initHost.startsWith("https://", ignoreCase = true)) initHost else "http://$initHost")
     }
 
-    val slicedSummary = remember(state.sliceResult, state.sceneObjects) {
-        val stats = state.sliceResult?.statistics
-        if (stats != null) {
-            "Sliced: ${stats.formattedTotalTime} • ${String.format(Locale.US, "%.1fg (%.2fm)", stats.filamentWeightGrams, stats.filamentLengthMeters)}"
-        } else if (state.sceneObjects.isNotEmpty()) {
-            "${state.sceneObjects.size} model(s) on build plate (ready to slice)"
-        } else {
-            "No active G-code job loaded"
-        }
-    }
-
-    fun loadCurrentModeIntoWebView(view: android.webkit.WebView?, mode: Int, rawUrlOrIp: String) {
-        val wv = view ?: return
-        val trimmed = rawUrlOrIp.trim().ifEmpty { "192.168.1.100" }
+    fun navigateToAddress(rawInput: String) {
+        val trimmed = rawInput.trim().ifEmpty { "192.168.1.100" }
         val normalizedUrl = if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
             trimmed
         } else {
             "http://$trimmed"
         }
-        val extractedHost = normalizedUrl
-            .substringAfter("://")
-            .substringBefore("/")
-            .substringBefore(":")
-            .ifEmpty { "192.168.1.100" }
-        activeHost = extractedHost
         addressBarText = normalizedUrl
-        viewModel.updatePrinterNetworkConfig(host = extractedHost)
-
-        when (mode) {
-            0 -> {
-                val html = KlipperWebUiTemplates.buildFluiddOrMainsailHtml(
-                    uiFlavor = "fluidd",
-                    printerHost = extractedHost,
-                    moonrakerPort = state.printerPort,
-                    printerName = state.selectedPrinter.name.substringBefore(" ("),
-                    hasSlicedGcode = state.sliceResult != null,
-                    slicedSummary = slicedSummary
-                )
-                wv.loadDataWithBaseURL("http://$extractedHost/", html, "text/html", "UTF-8", null)
-            }
-            1 -> {
-                val html = KlipperWebUiTemplates.buildFluiddOrMainsailHtml(
-                    uiFlavor = "mainsail",
-                    printerHost = extractedHost,
-                    moonrakerPort = state.printerPort,
-                    printerName = state.selectedPrinter.name.substringBefore(" ("),
-                    hasSlicedGcode = state.sliceResult != null,
-                    slicedSummary = slicedSummary
-                )
-                wv.loadDataWithBaseURL("http://$extractedHost/", html, "text/html", "UTF-8", null)
-            }
-            else -> {
-                wv.loadUrl(normalizedUrl)
-            }
+        val hostOnly = normalizedUrl.substringAfter("://").substringBefore("/").substringBefore(":")
+        if (hostOnly.isNotBlank()) {
+            viewModel.updatePrinterNetworkConfig(host = hostOnly)
         }
+        webViewRef?.loadUrl(normalizedUrl)
     }
 
     Column(
@@ -3515,241 +3531,161 @@ private fun DeviceNetworkPanel(
             .fillMaxSize()
             .background(OrcaDarkBg)
     ) {
-        // 1. Top Browser-Style Printer IP / URL Navigation Bar
-        Column(
+        // 1. Web Browser Navigation & Printer IP / URL Address Bar
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(OrcaTopBarBg)
                 .border(1.dp, OrcaBorder)
                 .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            // Back button
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(OrcaInputBg)
+                    .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
+                    .clickable {
+                        if (webViewRef?.canGoBack() == true) webViewRef?.goBack()
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                // Back button
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(OrcaInputBg)
-                        .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
-                        .clickable {
-                            if (webViewRef?.canGoBack() == true) {
-                                webViewRef?.goBack()
-                            } else {
-                                loadCurrentModeIntoWebView(webViewRef, webUiMode, addressBarText)
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("←", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrcaTextPrimary)
-                }
+                Text("←", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrcaTextPrimary)
+            }
 
-                // Forward button
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(OrcaInputBg)
-                        .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
-                        .clickable {
-                            if (webViewRef?.canGoForward() == true) webViewRef?.goForward()
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("→", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrcaTextSecondary)
-                }
+            // Forward button
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(OrcaInputBg)
+                    .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
+                    .clickable {
+                        if (webViewRef?.canGoForward() == true) webViewRef?.goForward()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("→", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrcaTextSecondary)
+            }
 
-                // Reload button
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(OrcaInputBg)
-                        .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
-                        .clickable {
-                            loadCurrentModeIntoWebView(webViewRef, webUiMode, addressBarText)
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("↻", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrcaTealBright)
-                }
+            // Reload button
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(OrcaInputBg)
+                    .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
+                    .clickable { webViewRef?.reload() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("↻", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrcaTealBright)
+            }
 
-                // Browser IP / URL Input Box
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(30.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(OrcaInputBg)
-                        .border(1.dp, OrcaTealBright.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Wifi,
-                        contentDescription = null,
-                        tint = OrcaTealBright,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    androidx.compose.foundation.text.BasicTextField(
-                        value = addressBarText,
-                        onValueChange = { addressBarText = it },
-                        singleLine = true,
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            color = Color.White,
-                            fontSize = 11.5.sp,
-                            fontFamily = FontFamily.Monospace
-                        ),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
-                            imeAction = androidx.compose.ui.text.input.ImeAction.Go
-                        ),
-                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                            onGo = {
-                                loadCurrentModeIntoWebView(webViewRef, webUiMode, addressBarText)
-                            }
-                        ),
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(OrcaTealBright),
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (addressBarText.isNotEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .size(16.dp)
-                                .clip(CircleShape)
-                                .background(OrcaElevatedBg)
-                                .clickable { addressBarText = "http://" },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Clear IP",
-                                tint = OrcaTextSecondary,
-                                modifier = Modifier.size(10.dp)
-                            )
-                        }
+            // Browser IP / URL Input Box
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(30.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(OrcaInputBg)
+                    .border(1.dp, OrcaTealBright.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Wifi,
+                    contentDescription = null,
+                    tint = OrcaTealBright,
+                    modifier = Modifier.size(13.dp)
+                )
+                androidx.compose.foundation.text.BasicTextField(
+                    value = addressBarText,
+                    onValueChange = { addressBarText = it },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        color = Color.White,
+                        fontSize = 11.5.sp,
+                        fontFamily = FontFamily.Monospace
+                    ),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Go
+                    ),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                        onGo = { navigateToAddress(addressBarText) }
+                    ),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(OrcaTealBright),
+                    modifier = Modifier.weight(1f)
+                )
+                if (addressBarText.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clip(CircleShape)
+                            .background(OrcaElevatedBg)
+                            .clickable { addressBarText = "" },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Clear URL",
+                            tint = OrcaTextSecondary,
+                            modifier = Modifier.size(10.dp)
+                        )
                     }
-                }
-
-                // Connect / GO button
-                Box(
-                    modifier = Modifier
-                        .height(30.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(OrcaTealBright)
-                        .clickable {
-                            loadCurrentModeIntoWebView(webViewRef, webUiMode, addressBarText)
-                        }
-                        .padding(horizontal = 11.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("GO", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF04141E))
-                }
-
-                // Toggle Moonraker API Config Drawer
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (showApiDrawer) OrcaActiveBtnBg else OrcaInputBg)
-                        .border(1.dp, if (showApiDrawer) OrcaTealBright else OrcaBorder, RoundedCornerShape(6.dp))
-                        .clickable { showApiDrawer = !showApiDrawer },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Tune, contentDescription = "API Settings", tint = OrcaTealBright, modifier = Modifier.size(14.dp))
                 }
             }
 
-            // Row 2: Fluidd UI | Mainsail UI | Direct HTTP Browser Switcher + Quick Port & Upload Pills
-            Row(
+            // GO button
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    .height(30.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(OrcaTealBright)
+                    .clickable { navigateToAddress(addressBarText) }
+                    .padding(horizontal = 11.dp),
+                contentAlignment = Alignment.Center
             ) {
-                val modes = listOf(
-                    0 to "Fluidd Web UI",
-                    1 to "Mainsail Web UI",
-                    2 to "Direct HTTP ($activeHost)"
-                )
-                modes.forEach { (modeId, label) ->
-                    val selected = webUiMode == modeId
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(if (selected) OrcaActiveBtnBg else OrcaCardBg)
-                            .border(
-                                1.dp,
-                                if (selected) OrcaTealBright else OrcaBorder,
-                                RoundedCornerShape(5.dp)
-                            )
-                            .clickable {
-                                webUiMode = modeId
-                                loadCurrentModeIntoWebView(webViewRef, modeId, addressBarText)
-                            }
-                            .padding(horizontal = 8.dp, vertical = 3.5.dp)
-                    ) {
-                        Text(
-                            text = label,
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (selected) OrcaTealBright else OrcaTextSecondary,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
-                }
+                Text("GO", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF04141E))
+            }
 
-                // Quick Port Chips (:80, :7125, :4408)
-                listOf(":80", ":7125", ":4408").forEach { portSuffix ->
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(5.dp))
-                            .background(OrcaInputBg)
-                            .border(1.dp, OrcaBorder, RoundedCornerShape(5.dp))
-                            .clickable {
-                                val nextUrl = "http://$activeHost$portSuffix"
-                                addressBarText = nextUrl
-                                webUiMode = 2
-                                loadCurrentModeIntoWebView(webViewRef, 2, nextUrl)
-                            }
-                            .padding(horizontal = 6.dp, vertical = 3.5.dp)
-                    ) {
-                        Text(
-                            text = portSuffix,
-                            fontSize = 9.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = OrcaTextPrimary
-                        )
+            // Quick Upload G-Code Pill
+            Box(
+                modifier = Modifier
+                    .height(30.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(OrcaInputBg)
+                    .border(1.dp, OrcaTealBright.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                    .clickable(enabled = !state.isNetworkBusy) {
+                        viewModel.sendGCodeToNetworkPrinter(startImmediately = false)
                     }
-                }
-
-                // Quick Upload G-Code Pill
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(5.dp))
-                        .background(OrcaInputBg)
-                        .border(1.dp, OrcaTealBright.copy(alpha = 0.6f), RoundedCornerShape(5.dp))
-                        .clickable(enabled = !state.isNetworkBusy) {
-                            viewModel.sendGCodeToNetworkPrinter(startImmediately = false)
-                        }
-                        .padding(horizontal = 7.dp, vertical = 3.5.dp),
-                    contentAlignment = Alignment.Center
+                    .padding(horizontal = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = OrcaTealBright, modifier = Modifier.size(10.dp))
-                        Text("Upload G-Code", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = OrcaTealBright, maxLines = 1, softWrap = false)
-                    }
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = OrcaTealBright, modifier = Modifier.size(11.dp))
+                    Text("Send G-Code", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = OrcaTealBright, maxLines = 1, softWrap = false)
                 }
+            }
+
+            // Toggle Moonraker API Config Drawer
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (showApiDrawer) OrcaActiveBtnBg else OrcaInputBg)
+                    .border(1.dp, if (showApiDrawer) OrcaTealBright else OrcaBorder, RoundedCornerShape(6.dp))
+                    .clickable { showApiDrawer = !showApiDrawer },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Tune, contentDescription = "API Settings", tint = OrcaTealBright, modifier = Modifier.size(14.dp))
             }
         }
 
@@ -3867,7 +3803,7 @@ private fun DeviceNetworkPanel(
             }
         }
 
-        // 3. Full-Screen Embedded Fluidd / Mainsail Web UI below the Browser Bar
+        // 3. Full-Screen Web Browser View (Fluidd / Mainsail / Printer IP)
         androidx.compose.ui.viewinterop.AndroidView(
             modifier = Modifier
                 .weight(1f)
@@ -3881,41 +3817,40 @@ private fun DeviceNetworkPanel(
                     isFocusable = true
                     isFocusableInTouchMode = true
                     setBackgroundColor(android.graphics.Color.parseColor("#16181D"))
+                    android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                    android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
                         databaseEnabled = true
                         allowFileAccess = true
                         allowContentAccess = true
+                        javaScriptCanOpenWindowsAutomatically = true
+                        setSupportZoom(true)
                         useWideViewPort = true
                         loadWithOverviewMode = true
                         builtInZoomControls = true
                         displayZoomControls = false
                         mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
                     }
                     webViewClient = object : android.webkit.WebViewClient() {
+                        override fun shouldOverrideUrlLoading(
+                            view: android.webkit.WebView?,
+                            request: android.webkit.WebResourceRequest?
+                        ): Boolean {
+                            return false
+                        }
+
                         override fun onPageStarted(view: android.webkit.WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                             isLoadingPage = true
-                            if (!url.isNullOrBlank() && url.startsWith("http")) {
+                            if (!url.isNullOrBlank()) {
                                 addressBarText = url
                             }
                         }
 
                         override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
                             isLoadingPage = false
-                        }
-
-                        override fun onReceivedError(
-                            view: android.webkit.WebView?,
-                            request: android.webkit.WebResourceRequest?,
-                            error: android.webkit.WebResourceError?
-                        ) {
-                            if (request?.isForMainFrame == true) {
-                                isLoadingPage = false
-                                // Automatically fall back to built-in Fluidd Web UI if direct HTTP server is unreachable
-                                webUiMode = 0
-                                loadCurrentModeIntoWebView(view, 0, addressBarText)
-                            }
                         }
                     }
                     webChromeClient = object : android.webkit.WebChromeClient() {
@@ -3925,7 +3860,7 @@ private fun DeviceNetworkPanel(
                         }
                     }
                     webViewRef = this
-                    loadCurrentModeIntoWebView(this, webUiMode, addressBarText)
+                    loadUrl(addressBarText)
                 }
             },
             update = { view ->
