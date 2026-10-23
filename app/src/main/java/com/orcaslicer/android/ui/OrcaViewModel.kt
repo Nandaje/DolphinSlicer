@@ -185,6 +185,10 @@ class OrcaViewModel : ViewModel() {
         _uiState.update { it.copy(isDockExpanded = !it.isDockExpanded) }
     }
 
+    fun setDockExpanded(expanded: Boolean) {
+        _uiState.update { it.copy(isDockExpanded = expanded) }
+    }
+
     fun setFloatingGizmoSheetVisible(visible: Boolean) {
         _uiState.update { it.copy(showFloatingGizmoSheet = visible) }
     }

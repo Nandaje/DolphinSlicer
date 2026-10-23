@@ -112,7 +112,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -1027,7 +1029,7 @@ private fun OrcaMobileReferenceHeader(
                         OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
                         Column {
                             Text(
-                                text = "DolphinSlicer v1.2.2",
+                                text = "DolphinSlicer v1.2.3",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = OrcaTealBright
@@ -1958,6 +1960,7 @@ private fun GlassToolIconButton(
  * - Expandable Multi-Tab Parameter Sheet (`QUALITY`, `STRENGTH`, `SPEED`, `SUPPORT`, `MULTIMATERIAL`, `OTHERS`)
  * - Action Footer: `SLICE PLATE` (or `IMPORT MODEL`) & `PRINT VIA KLIPPER` / `EXPORT` Buttons
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun OrcaReferenceBottomDrawer(
     modifier: Modifier = Modifier,
@@ -1972,76 +1975,116 @@ private fun OrcaReferenceBottomDrawer(
 
     val density = LocalDensity.current
     val maxBodyDpVal = maxSheetBodyHeightDp.value.coerceAtLeast(220f)
-    var expandedTargetHeightDp by remember { mutableFloatStateOf(270f) }
-    var isDraggingSheet by remember { mutableStateOf(false) }
-    var draggedHeightDp by remember { mutableFloatStateOf(0f) }
-    var handleRootY by remember { mutableFloatStateOf(0f) }
-    var dragStartFingerRootY by remember { mutableFloatStateOf(0f) }
-    var dragStartHeightDp by remember { mutableFloatStateOf(0f) }
 
-    val targetBodyHeightDp = if (isDraggingSheet) {
-        draggedHeightDp.coerceIn(0f, maxBodyDpVal)
-    } else if (state.isDockExpanded) {
-        expandedTargetHeightDp.coerceIn(110f, maxBodyDpVal)
-    } else {
-        0f
+    // Use MutableState / MutableFloatState objects read directly inside pointerInteropFilter so there is NEVER a stale closure!
+    val maxBodyDpState = remember { mutableFloatStateOf(maxBodyDpVal) }
+    maxBodyDpState.floatValue = maxBodyDpVal
+
+    val sheetHeightDpState = remember {
+        mutableFloatStateOf(if (state.isDockExpanded) (maxBodyDpVal * 0.55f).coerceIn(200f, maxBodyDpVal) else 0f)
+    }
+    val lastExpandedHeightDpState = remember {
+        mutableFloatStateOf((maxBodyDpVal * 0.55f).coerceIn(200f, maxBodyDpVal))
+    }
+    val isDraggingSheetState = remember { mutableStateOf(false) }
+    val dragStartRawYState = remember { mutableFloatStateOf(0f) }
+    val dragStartHeightDpState = remember { mutableFloatStateOf(0f) }
+    val hasMovedBeyondSlopState = remember { mutableStateOf(false) }
+
+    // Synchronize external button toggles (Settings / Collapse / Objects / Cost buttons) with sheetHeightDpState
+    LaunchedEffect(state.isDockExpanded) {
+        if (!isDraggingSheetState.value) {
+            if (state.isDockExpanded && sheetHeightDpState.floatValue < 32f) {
+                sheetHeightDpState.floatValue = lastExpandedHeightDpState.floatValue.coerceIn(160f, maxBodyDpState.floatValue)
+            } else if (!state.isDockExpanded && sheetHeightDpState.floatValue > 1f) {
+                sheetHeightDpState.floatValue = 0f
+            }
+        }
     }
 
-    val animatedBodyHeightDp by animateFloatAsState(
-        targetValue = targetBodyHeightDp,
+    val animatedHeightDp by animateFloatAsState(
+        targetValue = sheetHeightDpState.floatValue.coerceIn(0f, maxBodyDpVal),
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMedium
+            stiffness = Spring.StiffnessMediumLow
         ),
         label = "bottomDrawerHeight"
     )
-    // Use direct 1:1 finger height while actively dragging so there is zero spring lag; animate smoothly on tap/release
-    val currentBodyHeightDp = if (isDraggingSheet) targetBodyHeightDp else animatedBodyHeightDp
+
+    // While actively dragging, follow the finger 1:1 with zero spring lag; when released or tapped, animate smoothly
+    val displayHeightDp = if (isDraggingSheetState.value) {
+        sheetHeightDpState.floatValue.coerceIn(0f, maxBodyDpVal)
+    } else {
+        animatedHeightDp
+    }
+    val isSheetOpen = displayHeightDp > 8f
+
+    // Hardware screen-space rawY drag handler: 100% immune to moving local coordinates and layout passes
+    fun handleRawVerticalTouch(event: android.view.MotionEvent): Boolean {
+        return when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                dragStartRawYState.floatValue = event.rawY
+                dragStartHeightDpState.floatValue = sheetHeightDpState.floatValue.coerceIn(0f, maxBodyDpState.floatValue)
+                hasMovedBeyondSlopState.value = false
+                true
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                val deltaUpPx = dragStartRawYState.floatValue - event.rawY
+                val deltaUpDp = deltaUpPx / density.density
+                if (!hasMovedBeyondSlopState.value && kotlin.math.abs(deltaUpDp) > 3f) {
+                    hasMovedBeyondSlopState.value = true
+                    isDraggingSheetState.value = true
+                }
+                if (hasMovedBeyondSlopState.value) {
+                    val nextH = (dragStartHeightDpState.floatValue + deltaUpDp).coerceIn(0f, maxBodyDpState.floatValue)
+                    sheetHeightDpState.floatValue = nextH
+                }
+                true
+            }
+            android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                if (hasMovedBeyondSlopState.value) {
+                    isDraggingSheetState.value = false
+                    val finalH = sheetHeightDpState.floatValue
+                    if (finalH < 48f) {
+                        // Dragged down near the bottom -> close completely!
+                        sheetHeightDpState.floatValue = 0f
+                        viewModel.setDockExpanded(false)
+                    } else {
+                        // Free-form continuous height: stay right where the user released their finger!
+                        val clamped = finalH.coerceIn(48f, maxBodyDpState.floatValue)
+                        sheetHeightDpState.floatValue = clamped
+                        lastExpandedHeightDpState.floatValue = clamped.coerceAtLeast(160f)
+                        viewModel.setDockExpanded(true)
+                    }
+                } else if (event.actionMasked == android.view.MotionEvent.ACTION_UP) {
+                    // Simple tap on handle/header -> toggle open or closed
+                    if (sheetHeightDpState.floatValue > 32f) {
+                        sheetHeightDpState.floatValue = 0f
+                        viewModel.setDockExpanded(false)
+                    } else {
+                        val openH = lastExpandedHeightDpState.floatValue.coerceIn(200f, maxBodyDpState.floatValue)
+                        sheetHeightDpState.floatValue = openH
+                        viewModel.setDockExpanded(true)
+                    }
+                }
+                hasMovedBeyondSlopState.value = false
+                true
+            }
+            else -> false
+        }
+    }
+
+    // Pre-create ScrollStates outside the body so opening/closing the drawer never tears down or rebuilds the settings tree
+    val categoryTabsScrollState = rememberScrollState()
+    val settingsBodyScrollState = rememberScrollState()
+    val objectsBodyScrollState = rememberScrollState()
+    val costBodyScrollState = rememberScrollState()
+    val presetsBodyScrollState = rememberScrollState()
 
     val slice = state.sliceResult
     val stats = slice?.statistics
     val cost = stats?.calculateFullCostBreakdown(state.selectedPrinter, state.selectedFilament)
     val cur = state.selectedFilament.currencySymbol
-
-    // Root-coordinate vertical drag gesture: immune to the handle moving vertically as the sheet grows/shrinks
-    val dragGestureModifier = Modifier
-        .onGloballyPositioned { coords ->
-            handleRootY = coords.positionInRoot().y
-        }
-        .pointerInput(maxBodyDpVal) {
-            detectVerticalDragGestures(
-                onDragStart = { startOffset ->
-                    isDraggingSheet = true
-                    dragStartHeightDp = currentBodyHeightDp
-                    draggedHeightDp = currentBodyHeightDp
-                    dragStartFingerRootY = handleRootY + startOffset.y
-                },
-                onVerticalDrag = { change, _ ->
-                    change.consume()
-                    val currentFingerRootY = handleRootY + change.position.y
-                    val totalDeltaUpPx = dragStartFingerRootY - currentFingerRootY
-                    val totalDeltaUpDp = with(density) { totalDeltaUpPx.toDp().value }
-                    draggedHeightDp = (dragStartHeightDp + totalDeltaUpDp).coerceIn(0f, maxBodyDpVal)
-                },
-                onDragEnd = {
-                    val finalDp = draggedHeightDp
-                    isDraggingSheet = false
-                    if (finalDp < 72f) {
-                        if (state.isDockExpanded) viewModel.toggleDockExpanded()
-                    } else {
-                        expandedTargetHeightDp = if (finalDp > maxBodyDpVal * 0.90f) {
-                            maxBodyDpVal
-                        } else {
-                            finalDp.coerceIn(120f, maxBodyDpVal)
-                        }
-                        if (!state.isDockExpanded) viewModel.toggleDockExpanded()
-                    }
-                },
-                onDragCancel = {
-                    isDraggingSheet = false
-                }
-            )
-        }
 
     Column(
         modifier = modifier
@@ -2050,337 +2093,340 @@ private fun OrcaReferenceBottomDrawer(
             .background(OrcaPanelBg.copy(alpha = 0.97f))
             .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
     ) {
-        // 1. Dynamic Drag Handle (`#drawerDragHandle`) — Pull up to expand all the way over 3D viewport, pull down to shrink/collapse
+        // 1. Drag Handle Pill (`#drawerDragHandle`) — Hardware rawY continuous drag from 0dp to full top
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(dragGestureModifier)
-                .clickable {
-                    if (!state.isDockExpanded) {
-                        expandedTargetHeightDp = (maxBodyDpVal * 0.55f).coerceIn(220f, maxBodyDpVal)
-                        viewModel.toggleDockExpanded()
-                    } else if (expandedTargetHeightDp < maxBodyDpVal * 0.85f) {
-                        // Second tap pulls full to the top in front of the 3D viewport
-                        expandedTargetHeightDp = maxBodyDpVal
-                    } else {
-                        viewModel.toggleDockExpanded()
-                    }
-                }
-                .padding(top = 6.dp, bottom = 3.dp),
+                .pointerInteropFilter { handleRawVerticalTouch(it) }
+                .padding(top = 8.dp, bottom = 5.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .width(42.dp)
-                    .height(4.dp)
+                    .width(48.dp)
+                    .height(4.5.dp)
                     .clip(RoundedCornerShape(999.dp))
-                    .background(if (state.isDockExpanded || isDraggingSheet) OrcaTealBright else Color(0xFF475569))
+                    .background(if (isSheetOpen || isDraggingSheetState.value) OrcaTealBright else Color(0xFF64748B))
             )
         }
 
-        // 2. Quick Estimation & Header Summary Bar (also supports smooth vertical drag resizing)
+        // 2. Quick Estimation & Header Summary Bar (left side also supports smooth rawY vertical drag)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(dragGestureModifier)
                 .padding(horizontal = 10.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
-                Text(
-                    text = "PRINT ESTIMATION",
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.6.sp,
-                    color = OrcaTextSecondary,
-                    maxLines = 1,
-                    softWrap = false
-                )
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .pointerInteropFilter { handleRawVerticalTouch(it) }
+                    .padding(end = 6.dp)
+            ) {
                     Text(
-                        text = stats?.formattedTotalTime ?: if (state.sceneObjects.isEmpty()) "Empty Plate" else "Ready to Slice",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color.White,
+                        text = "PRINT ESTIMATION",
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.6.sp,
+                        color = OrcaTextSecondary,
                         maxLines = 1,
                         softWrap = false
                     )
-                    Text(
-                        text = if (stats != null) {
-                            String.format(Locale.US, "%.1fg (%.2fm)", stats.filamentWeightGrams, stats.filamentLengthMeters)
-                        } else {
-                            "${state.sceneObjects.size} obj"
-                        },
-                        fontSize = 9.5.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.SemiBold,
-                        color = OrcaTealBright,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                    if (cost != null) {
+                    Row(
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
                         Text(
-                            text = String.format(Locale.US, "~%s%.2f", cur, cost.totalProductionCost),
+                            text = stats?.formattedTotalTime ?: if (state.sceneObjects.isEmpty()) "Empty Plate" else "Ready to Slice",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                        Text(
+                            text = if (stats != null) {
+                                String.format(Locale.US, "%.1fg (%.2fm)", stats.filamentWeightGrams, stats.filamentLengthMeters)
+                            } else {
+                                "${state.sceneObjects.size} obj"
+                            },
+                            fontSize = 9.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold,
+                            color = OrcaTealBright,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                        if (cost != null) {
+                            Text(
+                                text = String.format(Locale.US, "~%s%.2f", cur, cost.totalProductionCost),
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = OrcaTextSecondary,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                }
+
+                // Right: Sub-view pills (`Objects`, `Cost`, `Full`) + `Settings / Collapse` button (`#toggleDrawerBtn`)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // Full-screen / Half-screen height toggle pill when expanded
+                    if (isSheetOpen) {
+                        val isFullTop = displayHeightDp >= maxBodyDpVal * 0.88f
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isFullTop) OrcaActiveBtnBg else OrcaGlassBg)
+                                .border(
+                                    1.dp,
+                                    if (isFullTop) OrcaActiveBtnBorder else OrcaGlassBorder,
+                                    RoundedCornerShape(6.dp)
+                                )
+                                .clickable {
+                                    val nextH = if (isFullTop) {
+                                        (maxBodyDpVal * 0.52f).coerceIn(200f, maxBodyDpVal)
+                                    } else {
+                                        maxBodyDpVal
+                                    }
+                                    sheetHeightDpState.floatValue = nextH
+                                    lastExpandedHeightDpState.floatValue = nextH
+                                    viewModel.setDockExpanded(true)
+                                }
+                                .padding(horizontal = 6.dp, vertical = 3.5.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isFullTop) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                                contentDescription = "Toggle Full Top Sheet",
+                                tint = OrcaTealBright,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+
+                    // Objects pill
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isSheetOpen && drawerSubView == 1) OrcaActiveBtnBg else OrcaGlassBg)
+                            .border(
+                                1.dp,
+                                if (isSheetOpen && drawerSubView == 1) OrcaActiveBtnBorder else OrcaGlassBorder,
+                                RoundedCornerShape(6.dp)
+                            )
+                            .clickable {
+                                drawerSubView = 1
+                                if (sheetHeightDpState.floatValue < 80f) {
+                                    sheetHeightDpState.floatValue = lastExpandedHeightDpState.floatValue.coerceIn(200f, maxBodyDpVal)
+                                }
+                                viewModel.setDockExpanded(true)
+                            }
+                            .padding(horizontal = 6.dp, vertical = 3.5.dp)
+                    ) {
+                        Text(
+                            text = "Objects (${state.sceneObjects.size})",
                             fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
-                            color = OrcaTextSecondary,
+                            color = if (isSheetOpen && drawerSubView == 1) OrcaTealBright else OrcaTextSecondary,
                             maxLines = 1,
                             softWrap = false
                         )
                     }
-                }
-            }
 
-            // Right: Sub-view pills (`Objects`, `Cost`, `Full`) + `Settings / Collapse` button (`#toggleDrawerBtn`)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                // Full-screen / Half-screen height toggle pill when expanded
-                if (state.isDockExpanded || currentBodyHeightDp > 40f) {
-                    val isFullTop = currentBodyHeightDp >= maxBodyDpVal * 0.88f
+                    // Cost pill
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(if (isFullTop) OrcaActiveBtnBg else OrcaGlassBg)
+                            .background(if (isSheetOpen && drawerSubView == 2) OrcaActiveBtnBg else OrcaGlassBg)
                             .border(
                                 1.dp,
-                                if (isFullTop) OrcaActiveBtnBorder else OrcaGlassBorder,
+                                if (isSheetOpen && drawerSubView == 2) OrcaActiveBtnBorder else OrcaGlassBorder,
                                 RoundedCornerShape(6.dp)
                             )
                             .clickable {
-                                expandedTargetHeightDp = if (isFullTop) {
-                                    (maxBodyDpVal * 0.52f).coerceIn(220f, maxBodyDpVal)
-                                } else {
-                                    maxBodyDpVal
+                                drawerSubView = 2
+                                if (sheetHeightDpState.floatValue < 80f) {
+                                    sheetHeightDpState.floatValue = lastExpandedHeightDpState.floatValue.coerceIn(200f, maxBodyDpVal)
                                 }
-                                if (!state.isDockExpanded) viewModel.toggleDockExpanded()
+                                viewModel.setDockExpanded(true)
                             }
                             .padding(horizontal = 6.dp, vertical = 3.5.dp)
                     ) {
+                        Text(
+                            text = "Cost",
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (isSheetOpen && drawerSubView == 2) OrcaTealBright else OrcaTextSecondary,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+
+                    // Settings / Collapse toggle button (`#toggleDrawerBtn`)
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isSheetOpen && drawerSubView == 0) OrcaActiveBtnBg else OrcaGlassBg)
+                            .border(
+                                1.dp,
+                                if (isSheetOpen && drawerSubView == 0) OrcaActiveBtnBorder else OrcaGlassBorder,
+                                RoundedCornerShape(6.dp)
+                            )
+                            .clickable {
+                                if (isSheetOpen && drawerSubView == 0) {
+                                    sheetHeightDpState.floatValue = 0f
+                                    viewModel.setDockExpanded(false)
+                                } else {
+                                    drawerSubView = 0
+                                    if (sheetHeightDpState.floatValue < 80f) {
+                                        sheetHeightDpState.floatValue = lastExpandedHeightDpState.floatValue.coerceIn(200f, maxBodyDpVal)
+                                    }
+                                    viewModel.setDockExpanded(true)
+                                }
+                            }
+                            .padding(horizontal = 7.dp, vertical = 3.5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = if (isSheetOpen && drawerSubView == 0) "Collapse" else "Settings",
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = OrcaTextPrimary,
+                            maxLines = 1,
+                            softWrap = false
+                        )
                         Icon(
-                            imageVector = if (isFullTop) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
-                            contentDescription = "Toggle Full Top Sheet",
+                            imageVector = if (isSheetOpen && drawerSubView == 0) Icons.Default.ExpandMore else Icons.Default.Tune,
+                            contentDescription = null,
                             tint = OrcaTealBright,
-                            modifier = Modifier.size(12.dp)
+                            modifier = Modifier.size(11.dp)
                         )
                     }
                 }
-
-                // Objects pill
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (state.isDockExpanded && drawerSubView == 1) OrcaActiveBtnBg else OrcaGlassBg)
-                        .border(
-                            1.dp,
-                            if (state.isDockExpanded && drawerSubView == 1) OrcaActiveBtnBorder else OrcaGlassBorder,
-                            RoundedCornerShape(6.dp)
-                        )
-                        .clickable {
-                            drawerSubView = 1
-                            if (!state.isDockExpanded) viewModel.toggleDockExpanded()
-                        }
-                        .padding(horizontal = 6.dp, vertical = 3.5.dp)
-                ) {
-                    Text(
-                        text = "Objects (${state.sceneObjects.size})",
-                        fontSize = 9.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = if (state.isDockExpanded && drawerSubView == 1) OrcaTealBright else OrcaTextSecondary,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                }
-
-                // Cost pill
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (state.isDockExpanded && drawerSubView == 2) OrcaActiveBtnBg else OrcaGlassBg)
-                        .border(
-                            1.dp,
-                            if (state.isDockExpanded && drawerSubView == 2) OrcaActiveBtnBorder else OrcaGlassBorder,
-                            RoundedCornerShape(6.dp)
-                        )
-                        .clickable {
-                            drawerSubView = 2
-                            if (!state.isDockExpanded) viewModel.toggleDockExpanded()
-                        }
-                        .padding(horizontal = 6.dp, vertical = 3.5.dp)
-                ) {
-                    Text(
-                        text = "Cost",
-                        fontSize = 9.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = if (state.isDockExpanded && drawerSubView == 2) OrcaTealBright else OrcaTextSecondary,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                }
-
-                // Settings / Collapse toggle button (`#toggleDrawerBtn`)
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (state.isDockExpanded && drawerSubView == 0) OrcaActiveBtnBg else OrcaGlassBg)
-                        .border(
-                            1.dp,
-                            if (state.isDockExpanded && drawerSubView == 0) OrcaActiveBtnBorder else OrcaGlassBorder,
-                            RoundedCornerShape(6.dp)
-                        )
-                        .clickable {
-                            if (state.isDockExpanded && drawerSubView == 0) {
-                                viewModel.toggleDockExpanded()
-                            } else {
-                                drawerSubView = 0
-                                if (!state.isDockExpanded) viewModel.toggleDockExpanded()
-                            }
-                        }
-                        .padding(horizontal = 7.dp, vertical = 3.5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Text(
-                        text = if (state.isDockExpanded && drawerSubView == 0) "Collapse" else "Settings",
-                        fontSize = 9.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = OrcaTextPrimary,
-                        maxLines = 1,
-                        softWrap = false
-                    )
-                    Icon(
-                        imageVector = if (state.isDockExpanded && drawerSubView == 0) Icons.Default.ExpandMore else Icons.Default.Tune,
-                        contentDescription = null,
-                        tint = OrcaTealBright,
-                        modifier = Modifier.size(11.dp)
-                    )
-                }
-            }
         }
 
-        // 3. Detailed Multi-Tab Parameter Sheet (`#drawerSettingsBody`, smoothly sized from 0.dp up to full viewport height)
-        if (currentBodyHeightDp > 2f) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(currentBodyHeightDp.dp)
-                    .padding(horizontal = 10.dp, vertical = 3.dp)
-            ) {
-                when (drawerSubView) {
-                    0 -> {
-                        // Category Tab Pills (`QUALITY` | `STRENGTH` | `SPEED` | `SUPPORT` | `MULTIMATERIAL` | `OTHERS`)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState())
-                                .padding(bottom = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            ProcessCategoryTab.entries.forEach { tab ->
-                                val active = state.activeProcessTab == tab
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(5.dp))
-                                        .background(if (active) OrcaActiveBtnBg else OrcaCardBg)
-                                        .border(
-                                            1.dp,
-                                            if (active) OrcaActiveBtnBorder else Color.Transparent,
-                                            RoundedCornerShape(5.dp)
-                                        )
-                                        .clickable { viewModel.selectProcessTab(tab) }
-                                        .padding(horizontal = 8.dp, vertical = 3.5.dp)
-                                ) {
-                                    Text(
-                                        text = tab.title.uppercase(Locale.US),
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (active) OrcaTealBright else OrcaTextSecondary,
-                                        maxLines = 1,
-                                        softWrap = false
-                                    )
-                                }
-                            }
-
-                            // Search parameter toggle pill
+        // 3. Detailed Multi-Tab Parameter Sheet (`#drawerSettingsBody`, kept in composition tree for zero-stutter 120fps drag)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(displayHeightDp.dp)
+                .padding(horizontal = 10.dp, vertical = if (displayHeightDp > 4f) 3.dp else 0.dp)
+        ) {
+            when (drawerSubView) {
+                0 -> {
+                    // Category Tab Pills (`QUALITY` | `STRENGTH` | `SPEED` | `SUPPORT` | `MULTIMATERIAL` | `OTHERS`)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(categoryTabsScrollState)
+                            .padding(bottom = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ProcessCategoryTab.entries.forEach { tab ->
+                            val active = state.activeProcessTab == tab
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(5.dp))
-                                    .background(if (state.showProcessSearchBar) OrcaActiveBtnBg else OrcaCardBg)
-                                    .clickable { viewModel.toggleProcessSearchBar() }
-                                    .padding(horizontal = 7.dp, vertical = 3.5.dp)
+                                    .background(if (active) OrcaActiveBtnBg else OrcaCardBg)
+                                    .border(
+                                        1.dp,
+                                        if (active) OrcaActiveBtnBorder else Color.Transparent,
+                                        RoundedCornerShape(5.dp)
+                                    )
+                                    .clickable { viewModel.selectProcessTab(tab) }
+                                    .padding(horizontal = 8.dp, vertical = 3.5.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = "Search Settings",
-                                    tint = if (state.showProcessSearchBar) OrcaTealBright else OrcaTextSecondary,
-                                    modifier = Modifier.size(11.dp)
+                                Text(
+                                    text = tab.title.uppercase(Locale.US),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (active) OrcaTealBright else OrcaTextSecondary,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }
 
-                        HorizontalDivider(color = Color(0x1AFFFFFF), modifier = Modifier.padding(bottom = 4.dp))
-
-                        Column(
+                        // Search parameter toggle pill
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(if (state.showProcessSearchBar) OrcaActiveBtnBg else OrcaCardBg)
+                                .clickable { viewModel.toggleProcessSearchBar() }
+                                .padding(horizontal = 7.dp, vertical = 3.5.dp)
                         ) {
-                            // Reference Quick Tuning Cards from mobile_3d_slicer_ui.html
-                            QuickReferenceParameterCards(state = state, viewModel = viewModel)
-
-                            // Complete 1:1 OrcaSlicer & Cura Combing Mode Parameter Rows
-                            FullProcessSettingsCard(state = state, viewModel = viewModel)
-                        }
-                    }
-
-                    1 -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            ObjectListCard(
-                                state = state,
-                                viewModel = viewModel,
-                                onImportClick = onImportClick
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search Settings",
+                                tint = if (state.showProcessSearchBar) OrcaTealBright else OrcaTextSecondary,
+                                modifier = Modifier.size(11.dp)
                             )
                         }
                     }
 
-                    2 -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            if (state.sliceResult != null) {
-                                SliceStatisticsSummaryCard(state = state, viewModel = viewModel)
-                            } else {
-                                FilamentQuickCalculatorCard(state = state, viewModel = viewModel)
-                            }
+                    HorizontalDivider(color = Color(0x1AFFFFFF), modifier = Modifier.padding(bottom = 4.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(settingsBodyScrollState),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Reference Quick Tuning Cards from mobile_3d_slicer_ui.html
+                        QuickReferenceParameterCards(state = state, viewModel = viewModel)
+
+                        // Complete 1:1 OrcaSlicer & Cura Combing Mode Parameter Rows
+                        FullProcessSettingsCard(state = state, viewModel = viewModel)
+                    }
+                }
+
+                1 -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(objectsBodyScrollState)
+                    ) {
+                        ObjectListCard(
+                            state = state,
+                            viewModel = viewModel,
+                            onImportClick = onImportClick
+                        )
+                    }
+                }
+
+                2 -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(costBodyScrollState)
+                    ) {
+                        if (state.sliceResult != null) {
+                            SliceStatisticsSummaryCard(state = state, viewModel = viewModel)
+                        } else {
+                            FilamentQuickCalculatorCard(state = state, viewModel = viewModel)
                         }
                     }
+                }
 
-                    3 -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            FullPresetSelectorsCard(
-                                state = state,
-                                viewModel = viewModel,
-                                onImportProfileClick = onImportClick
-                            )
-                        }
+                3 -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(presetsBodyScrollState)
+                    ) {
+                        FullPresetSelectorsCard(
+                            state = state,
+                            viewModel = viewModel,
+                            onImportProfileClick = onImportClick
+                        )
                     }
                 }
             }
