@@ -196,12 +196,13 @@ data class SceneObject(
     val supportEnabledOverride: Boolean? = null
 ) {
     fun transformPoint(local: Vec3): Vec3 {
-        // Scale
-        var x = local.x * scale.x
-        var y = local.y * scale.y
-        var z = local.z * scale.z
+        // Center pivot at mesh geometric center so rotations happen in-place around the object's center
+        val lc = mesh.localBounds.center
+        var x = local.x - lc.x
+        var y = local.y - lc.y
+        var z = local.z - lc.z
 
-        // Rotate X -> Y -> Z (degrees to radians)
+        // Global Euler rotation X -> Y -> Z (degrees to radians)
         val rx = rotationDeg.x * (PI.toFloat() / 180f)
         val ry = rotationDeg.y * (PI.toFloat() / 180f)
         val rz = rotationDeg.z * (PI.toFloat() / 180f)
@@ -225,7 +226,12 @@ data class SceneObject(
             x = nx; y = ny
         }
 
-        return Vec3(x + position.x, y + position.y, z + position.z)
+        // Global-orientation scale along world X, Y, Z axes (matching OrcaSlicer global coordinate system)
+        x *= scale.x
+        y *= scale.y
+        z *= scale.z
+
+        return Vec3(x + position.x, y + position.y, z + lc.z + position.z)
     }
 
     fun worldBoundingBox(): BoundingBox {

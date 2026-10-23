@@ -113,6 +113,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -135,19 +136,19 @@ import kotlinx.coroutines.delay
 import java.util.Locale
 import kotlin.math.roundToInt
 
-// Lumos Dark Obsidian + Acid Chartreuse-Lime (#B8E900) + Crimson (#E53935) Theme Palette
-internal val OrcaActiveTabBg = Color(0xFF8DB800)
-private val OrcaGlassBg = Color(0xE60C0E0C)          // Deep obsidian glass
-private val OrcaGlassBorder = Color(0x26B8E900)      // Subtle chartreuse-lime border
-private val OrcaActiveBtnBg = Color(0x33B8E900)      // Acid lime active fill
-private val OrcaActiveBtnBorder = Color(0x99B8E900)  // Acid lime active border
-private val EmeraldGreen = Color(0xFFB8E900)         // Chartreuse-lime status accent
-private val EmeraldDimBg = Color(0x2296C400)
-private val EmeraldBorder = Color(0x55B8E900)
+// DolphinSlicer Dark Charcoal + Azure/Teal Theme Palette
+internal val OrcaActiveTabBg = Color(0xFF1D88B8)
+private val OrcaGlassBg = Color(0xEB151822)          // Deep dark slate glass
+private val OrcaGlassBorder = Color(0x18FFFFFF)
+private val OrcaActiveBtnBg = Color(0x3329ABE2)      // Dolphin Azure active fill
+private val OrcaActiveBtnBorder = Color(0x8829ABE2)  // Dolphin Azure active border
+private val EmeraldGreen = Color(0xFF10B981)
+private val EmeraldDimBg = Color(0x2210B981)
+private val EmeraldBorder = Color(0x4D10B981)
 
 private val OrcaColorScheme = darkColorScheme(
     primary = OrcaTeal,
-    onPrimary = Color(0xFF070900),
+    onPrimary = Color(0xFF04141E),
     secondary = OrcaTealBright,
     background = OrcaDarkBg,
     surface = OrcaPanelBg,
@@ -300,12 +301,25 @@ fun OrcaSlicerScreen(viewModel: OrcaViewModel) {
                                     }
                                 }
                             } else {
-                                // PORTRAIT: 3D Viewport + Reference Bottom Drawer & Tuning Panel
-                                Column(modifier = Modifier.fillMaxSize()) {
+                                // PORTRAIT: 3D Viewport in back + Dynamic Adjustable Bottom Sheet in front of 3D Viewport
+                                val density = LocalDensity.current
+                                var workspaceHeightPx by remember { mutableFloatStateOf(0f) }
+                                val maxDrawerBodyDp = if (workspaceHeightPx > 0f) {
+                                    with(density) { workspaceHeightPx.toDp() - 92.dp }.coerceAtLeast(220.dp)
+                                } else {
+                                    (configuration.screenHeightDp.dp - 210.dp).coerceAtLeast(220.dp)
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .onSizeChanged { workspaceHeightPx = it.height.toFloat() }
+                                ) {
+                                    // 3D Viewport stays fixed in the background; bottom padding reserves room for the collapsed bar
                                     Box(
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxWidth()
+                                            .fillMaxSize()
+                                            .padding(bottom = 84.dp)
                                     ) {
                                         ViewportWithTouchOverlays(
                                             state = state,
@@ -315,7 +329,10 @@ fun OrcaSlicerScreen(viewModel: OrcaViewModel) {
                                         )
                                     }
 
+                                    // Dynamic Bottom Drawer overlays IN FRONT of the 3D Viewport when pulled up
                                     OrcaReferenceBottomDrawer(
+                                        modifier = Modifier.align(Alignment.BottomCenter),
+                                        maxSheetBodyHeightDp = maxDrawerBodyDp,
                                         state = state,
                                         viewModel = viewModel,
                                         onImportClick = triggerImport,
@@ -1868,6 +1885,8 @@ private fun GlassToolIconButton(
  */
 @Composable
 private fun OrcaReferenceBottomDrawer(
+    modifier: Modifier = Modifier,
+    maxSheetBodyHeightDp: androidx.compose.ui.unit.Dp = 520.dp,
     state: OrcaUiState,
     viewModel: OrcaViewModel,
     onImportClick: () -> Unit,
@@ -1876,39 +1895,80 @@ private fun OrcaReferenceBottomDrawer(
     var drawerSubView by remember { mutableIntStateOf(0) } // 0 = Settings, 1 = Objects, 2 = Cost/Stats, 3 = Presets
     var showPrintExportMenu by remember { mutableStateOf(false) }
 
+    val density = LocalDensity.current
+    val maxBodyDpVal = maxSheetBodyHeightDp.value.coerceAtLeast(220f)
+    var sheetBodyHeightDp by remember { mutableFloatStateOf(260f) }
+    val clampedBodyHeightDp = sheetBodyHeightDp.coerceIn(110f, maxBodyDpVal)
+
     val slice = state.sliceResult
     val stats = slice?.statistics
     val cost = stats?.calculateFullCostBreakdown(state.selectedPrinter, state.selectedFilament)
     val cur = state.selectedFilament.currencySymbol
 
+    val dragGestureModifier = Modifier.pointerInput(maxBodyDpVal, state.isDockExpanded) {
+        detectVerticalDragGestures(
+            onVerticalDrag = { change, dragAmountPx ->
+                change.consume()
+                val deltaDp = with(density) { dragAmountPx.toDp().value }
+                if (!state.isDockExpanded) {
+                    if (deltaDp < -2f) {
+                        sheetBodyHeightDp = (-deltaDp).coerceIn(110f, maxBodyDpVal)
+                        viewModel.toggleDockExpanded()
+                    }
+                } else {
+                    val nextDp = sheetBodyHeightDp - deltaDp
+                    if (nextDp < 65f && deltaDp > 0f) {
+                        sheetBodyHeightDp = 260f
+                        viewModel.toggleDockExpanded()
+                    } else {
+                        sheetBodyHeightDp = nextDp.coerceIn(90f, maxBodyDpVal)
+                    }
+                }
+            }
+        )
+    }
+
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
-            .background(OrcaPanelBg)
+            .background(OrcaPanelBg.copy(alpha = 0.97f))
             .border(1.dp, Color(0x26FFFFFF), RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
     ) {
-        // 1. Drag Handle (`#drawerDragHandle`)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { viewModel.toggleDockExpanded() }
-                .padding(top = 5.dp, bottom = 2.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(32.dp)
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Color(0xFF475569))
-            )
-        }
-
-        // 2. Quick Estimation & Header Summary Bar (HTML lines 371-386)
+        // 1. Dynamic Drag Handle (`#drawerDragHandle`) — Pull up to expand all the way over 3D viewport, pull down to shrink/collapse
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(dragGestureModifier)
+                .clickable {
+                    if (!state.isDockExpanded) {
+                        sheetBodyHeightDp = (maxBodyDpVal * 0.55f).coerceIn(220f, maxBodyDpVal)
+                        viewModel.toggleDockExpanded()
+                    } else if (sheetBodyHeightDp < maxBodyDpVal * 0.85f) {
+                        // Second tap pulls full to the top in front of the 3D viewport
+                        sheetBodyHeightDp = maxBodyDpVal
+                    } else {
+                        viewModel.toggleDockExpanded()
+                    }
+                }
+                .padding(top = 6.dp, bottom = 3.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(42.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(if (state.isDockExpanded) OrcaTealBright else Color(0xFF475569))
+            )
+        }
+
+        // 2. Quick Estimation & Header Summary Bar (also supports vertical drag resizing)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(dragGestureModifier)
                 .padding(horizontal = 10.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
@@ -1961,11 +2021,41 @@ private fun OrcaReferenceBottomDrawer(
                 }
             }
 
-            // Right: Sub-view pills (`Objects`, `Cost`) + `Settings / Collapse` button (`#toggleDrawerBtn`)
+            // Right: Sub-view pills (`Objects`, `Cost`, `Full`) + `Settings / Collapse` button (`#toggleDrawerBtn`)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                // Full-screen / Half-screen height toggle pill when expanded
+                if (state.isDockExpanded) {
+                    val isFullTop = clampedBodyHeightDp >= maxBodyDpVal * 0.88f
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isFullTop) OrcaActiveBtnBg else OrcaGlassBg)
+                            .border(
+                                1.dp,
+                                if (isFullTop) OrcaActiveBtnBorder else OrcaGlassBorder,
+                                RoundedCornerShape(6.dp)
+                            )
+                            .clickable {
+                                sheetBodyHeightDp = if (isFullTop) {
+                                    (maxBodyDpVal * 0.52f).coerceIn(220f, maxBodyDpVal)
+                                } else {
+                                    maxBodyDpVal
+                                }
+                            }
+                            .padding(horizontal = 6.dp, vertical = 3.5.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isFullTop) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                            contentDescription = "Toggle Full Top Sheet",
+                            tint = OrcaTealBright,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+
                 // Objects pill
                 Box(
                     modifier = Modifier
@@ -2058,12 +2148,12 @@ private fun OrcaReferenceBottomDrawer(
             }
         }
 
-        // 3. Detailed Multi-Tab Parameter Sheet (`#drawerSettingsBody`, HTML lines 388-549)
+        // 3. Detailed Multi-Tab Parameter Sheet (`#drawerSettingsBody`, dynamically sized up to full viewport height)
         AnimatedVisibility(visible = state.isDockExpanded) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 215.dp)
+                    .height(clampedBodyHeightDp.dp)
                     .padding(horizontal = 10.dp, vertical = 3.dp)
             ) {
                 when (drawerSubView) {
@@ -2823,12 +2913,32 @@ private fun FloatingGizmoControlCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "${state.activeGizmoMode.title.uppercase()} — ${selected.name}",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = OrcaTealBright
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "${state.activeGizmoMode.title.uppercase()} — ${selected.name}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = OrcaTealBright
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(OrcaActiveBtnBg)
+                            .border(1.dp, OrcaActiveBtnBorder, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 5.dp, vertical = 1.5.dp)
+                    ) {
+                        Text(
+                            text = "GLOBAL XYZ",
+                            fontSize = 8.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = OrcaTealBright
+                        )
+                    }
+                }
                 IconButton(
                     onClick = { viewModel.setFloatingGizmoSheetVisible(false) },
                     modifier = Modifier.size(28.dp)

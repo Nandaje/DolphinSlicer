@@ -130,65 +130,67 @@ class OrcaGlSurfaceView(
                     renderer.cameraTargetZ = (renderer.cameraTargetZ + dy * panScale).coerceIn(-20f, 400f)
                     requestRender()
                 } else if (!isScalingOrPanning && event.pointerCount == 1) {
-                    val dx = event.x - prevTouchX
-                    val dy = event.y - prevTouchY
+                    val oldX = prevTouchX
+                    val oldY = prevTouchY
+                    val dx = event.x - oldX
+                    val dy = event.y - oldY
                     prevTouchX = event.x
                     prevTouchY = event.y
 
                     if (draggedGizmoAxis != -1 && onTransformSelectedObject != null) {
-                        val moveScale = (renderer.cameraDistance * 0.0015f).coerceIn(0.05f, 1.5f)
-                        val yawRad = renderer.cameraYawDeg * (PI.toFloat() / 180f)
-                        val rightX = -sin(yawRad)
-                        val rightY = cos(yawRad)
-                        val fwdX = -cos(yawRad)
-                        val fwdY = -sin(yawRad)
                         val halfBedX = (renderer.printerProfile?.bedWidthX ?: 256f) * 0.5f
                         val halfBedY = (renderer.printerProfile?.bedDepthY ?: 256f) * 0.5f
 
-                        val worldDeltaX = dx * rightX * moveScale - dy * fwdX * moveScale
-                        val worldDeltaY = dx * rightY * moveScale - dy * fwdY * moveScale
-                        val worldDeltaZ = -dy * moveScale
-
                         when (renderer.activeGizmoModeOrdinal) {
                             0 -> {
-                                // MOVE GIZMO
+                                // MOVE GIZMO (Global World Orientation: +X Red, +Y Green, +Z Blue)
+                                val deltaX = renderer.projectWorldAxisDelta(dx, dy, 1f, 0f, 0f)
+                                val deltaY = renderer.projectWorldAxisDelta(dx, dy, 0f, 1f, 0f)
+                                val deltaZ = renderer.projectWorldAxisDelta(dx, dy, 0f, 0f, 1f)
+
                                 onTransformSelectedObject?.invoke { obj ->
                                     when (draggedGizmoAxis) {
-                                        0 -> obj.copy(position = obj.position.copy(x = (obj.position.x + worldDeltaX).coerceIn(-halfBedX, halfBedX)))
-                                        1 -> obj.copy(position = obj.position.copy(y = (obj.position.y + worldDeltaY).coerceIn(-halfBedY, halfBedY)))
-                                        2 -> obj.copy(position = obj.position.copy(z = (obj.position.z + worldDeltaZ).coerceIn(-50f, 300f)))
+                                        0 -> obj.copy(position = obj.position.copy(x = (obj.position.x + deltaX).coerceIn(-halfBedX, halfBedX)))
+                                        1 -> obj.copy(position = obj.position.copy(y = (obj.position.y + deltaY).coerceIn(-halfBedY, halfBedY)))
+                                        2 -> obj.copy(position = obj.position.copy(z = (obj.position.z + deltaZ).coerceIn(-50f, 300f)))
                                         else -> obj.copy(
                                             position = obj.position.copy(
-                                                x = (obj.position.x + worldDeltaX).coerceIn(-halfBedX, halfBedX),
-                                                y = (obj.position.y + worldDeltaY).coerceIn(-halfBedY, halfBedY)
+                                                x = (obj.position.x + deltaX).coerceIn(-halfBedX, halfBedX),
+                                                y = (obj.position.y + deltaY).coerceIn(-halfBedY, halfBedY)
                                             )
                                         )
                                     }
                                 }
                             }
                             1 -> {
-                                // SCALE GIZMO
-                                val scaleDelta = (dx - dy) * 0.0045f
+                                // SCALE GIZMO (Global World X, Y, Z axes + Uniform scale)
+                                val scaleFactorPerMm = 0.025f
+                                val deltaSx = renderer.projectWorldAxisDelta(dx, dy, 1f, 0f, 0f) * scaleFactorPerMm
+                                val deltaSy = renderer.projectWorldAxisDelta(dx, dy, 0f, 1f, 0f) * scaleFactorPerMm
+                                val deltaSz = renderer.projectWorldAxisDelta(dx, dy, 0f, 0f, 1f) * scaleFactorPerMm
+                                val uniformDelta = (dx - dy) * 0.0045f
+
                                 onTransformSelectedObject?.invoke { obj ->
                                     when (draggedGizmoAxis) {
-                                        0 -> obj.copy(scale = obj.scale.copy(x = (obj.scale.x + scaleDelta).coerceIn(0.1f, 5.0f)))
-                                        1 -> obj.copy(scale = obj.scale.copy(y = (obj.scale.y + scaleDelta).coerceIn(0.1f, 5.0f)))
-                                        2 -> obj.copy(scale = obj.scale.copy(z = (obj.scale.z + scaleDelta).coerceIn(0.1f, 5.0f)))
+                                        0 -> obj.copy(scale = obj.scale.copy(x = (obj.scale.x + deltaSx).coerceIn(0.1f, 5.0f)))
+                                        1 -> obj.copy(scale = obj.scale.copy(y = (obj.scale.y + deltaSy).coerceIn(0.1f, 5.0f)))
+                                        2 -> obj.copy(scale = obj.scale.copy(z = (obj.scale.z + deltaSz).coerceIn(0.1f, 5.0f)))
                                         else -> {
-                                            val nextS = (obj.scale.x + scaleDelta).coerceIn(0.1f, 5.0f)
+                                            val nextS = (obj.scale.x + uniformDelta).coerceIn(0.1f, 5.0f)
                                             obj.copy(scale = Vec3(nextS, nextS, nextS))
                                         }
                                     }
                                 }
                             }
                             2 -> {
-                                // ROTATE GIZMO
-                                val degDelta = (dx - dy) * 0.55f
+                                // ROTATE GIZMO (Global World X, Y, Z orbital rings around object 3D center)
+                                val rotAxis = if (draggedGizmoAxis in 0..2) draggedGizmoAxis else 2
+                                val degDelta = renderer.computeScreenRotationDeltaDeg(oldX, oldY, event.x, event.y, rotAxis)
                                 onTransformSelectedObject?.invoke { obj ->
-                                    when (draggedGizmoAxis) {
+                                    when (rotAxis) {
                                         0 -> obj.copy(rotationDeg = obj.rotationDeg.copy(x = ((obj.rotationDeg.x + degDelta + 540f) % 360f) - 180f))
                                         1 -> obj.copy(rotationDeg = obj.rotationDeg.copy(y = ((obj.rotationDeg.y + degDelta + 540f) % 360f) - 180f))
-                                        else -> obj.copy(rotationDeg = obj.rotationDeg.copy(z = ((obj.rotationDeg.z + dx * 0.65f + 540f) % 360f) - 180f))
+                                        else -> obj.copy(rotationDeg = obj.rotationDeg.copy(z = ((obj.rotationDeg.z + degDelta + 540f) % 360f) - 180f))
                                     }
                                 }
                             }

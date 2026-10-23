@@ -44,7 +44,7 @@ class OrcaGlRenderer(
     @Volatile var sceneObjects: List<SceneObject> = emptyList()
     @Volatile var selectedObjectId: String? = null
     @Volatile var printerProfile: PrinterProfile? = null
-    @Volatile var filamentColorRgb: FloatArray = floatArrayOf(0.72f, 0.91f, 0.0f)
+    @Volatile var filamentColorRgb: FloatArray = floatArrayOf(0.0f, 0.78f, 0.65f)
     @Volatile var showOverhangHighlight: Boolean = true
     @Volatile var overhangThresholdDeg: Int = 45
 
@@ -94,8 +94,8 @@ class OrcaGlRenderer(
     private var gizmoTriVboId: Int = 0
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        // Lumos dark graphite viewport background (#151615) matching reference screenshot
-        GLES30.glClearColor(0.082f, 0.086f, 0.082f, 1.0f)
+        // Deep charcoal-slate viewport background (#0E0F12)
+        GLES30.glClearColor(0.055f, 0.059f, 0.071f, 1.0f)
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
         GLES30.glDepthFunc(GLES30.GL_LEQUAL)
         GLES30.glEnable(GLES30.GL_BLEND)
@@ -216,16 +216,16 @@ class OrcaGlRenderer(
         val hw = bedW * 0.5f
         val hd = bedD * 0.5f
 
-        // Lumos dark graphite PEI Build Plate surface (#191B19) at Z = -0.08
+        // Dark PEI Build Plate surface (#181A20) at Z = -0.08
         val zPlate = -0.08f
-        val pr = 0.098f; val pg = 0.106f; val pb = 0.098f
+        val pr = 0.094f; val pg = 0.102f; val pb = 0.125f
         val quadFloats = floatArrayOf(
             -hw, -hd, zPlate, pr, pg, pb, 0f,
              hw, -hd, zPlate, pr, pg, pb, 0f,
-             hw,  hd, zPlate, pr + 0.016f, pg + 0.018f, pb + 0.016f, 0f,
+             hw,  hd, zPlate, pr + 0.02f, pg + 0.02f, pb + 0.025f, 0f,
             -hw, -hd, zPlate, pr, pg, pb, 0f,
-             hw,  hd, zPlate, pr + 0.016f, pg + 0.018f, pb + 0.016f, 0f,
-            -hw,  hd, zPlate, pr + 0.012f, pg + 0.014f, pb + 0.012f, 0f
+             hw,  hd, zPlate, pr + 0.02f, pg + 0.02f, pb + 0.025f, 0f,
+            -hw,  hd, zPlate, pr + 0.015f, pg + 0.015f, pb + 0.02f, 0f
         )
         plateQuadVboId = uploadFloatArrayToVbo(quadFloats, plateQuadVboId)
 
@@ -242,11 +242,11 @@ class OrcaGlRenderer(
             val isCenter = kotlin.math.abs(x) < 0.01f
             val isMajor = (idxX % 5 == 0)
             if (isCenter) {
-                addLine(x, -hd, 0.01f, x, hd, 0.01f, 0.52f, 0.68f, 0.05f) // Y center line (Lime)
+                addLine(x, -hd, 0.01f, x, hd, 0.01f, 0.18f, 0.55f, 0.28f) // Y center line (Greenish)
             } else if (isMajor) {
-                addLine(x, -hd, 0f, x, hd, 0f, 0.25f, 0.27f, 0.25f)
+                addLine(x, -hd, 0f, x, hd, 0f, 0.25f, 0.28f, 0.34f)
             } else {
-                addLine(x, -hd, 0f, x, hd, 0f, 0.16f, 0.17f, 0.16f)
+                addLine(x, -hd, 0f, x, hd, 0f, 0.16f, 0.18f, 0.22f)
             }
             x += step
             idxX++
@@ -258,39 +258,39 @@ class OrcaGlRenderer(
             val isCenter = kotlin.math.abs(y) < 0.01f
             val isMajor = (idxY % 5 == 0)
             if (isCenter) {
-                addLine(-hw, y, 0.01f, hw, y, 0.01f, 0.72f, 0.20f, 0.24f) // X center line (Crimson)
+                addLine(-hw, y, 0.01f, hw, y, 0.01f, 0.62f, 0.22f, 0.24f) // X center line (Reddish)
             } else if (isMajor) {
-                addLine(-hw, y, 0f, hw, y, 0f, 0.25f, 0.27f, 0.25f)
+                addLine(-hw, y, 0f, hw, y, 0f, 0.25f, 0.28f, 0.34f)
             } else {
-                addLine(-hw, y, 0f, hw, y, 0f, 0.16f, 0.17f, 0.16f)
+                addLine(-hw, y, 0f, hw, y, 0f, 0.16f, 0.18f, 0.22f)
             }
             y += step
             idxY++
         }
 
-        // Build Boundary Perimeter Line (Lumos Acid Lime accent #B8E900)
-        addLine(-hw, -hd, 0.03f,  hw, -hd, 0.03f, 0.72f, 0.91f, 0.0f)
-        addLine( hw, -hd, 0.03f,  hw,  hd, 0.03f, 0.72f, 0.91f, 0.0f)
-        addLine( hw,  hd, 0.03f, -hw,  hd, 0.03f, 0.72f, 0.91f, 0.0f)
-        addLine(-hw,  hd, 0.03f, -hw, -hd, 0.03f, 0.72f, 0.91f, 0.0f)
+        // Build Boundary Perimeter Line (DolphinSlicer Azure/Teal accent)
+        addLine(-hw, -hd, 0.03f,  hw, -hd, 0.03f, 0.16f, 0.67f, 0.89f)
+        addLine( hw, -hd, 0.03f,  hw,  hd, 0.03f, 0.16f, 0.67f, 0.89f)
+        addLine( hw,  hd, 0.03f, -hw,  hd, 0.03f, 0.16f, 0.67f, 0.89f)
+        addLine(-hw,  hd, 0.03f, -hw, -hd, 0.03f, 0.16f, 0.67f, 0.89f)
 
         // Coordinate Axes at front-left corner (-hw, -hd)
         val axisLen = 35f
-        addLine(-hw, -hd, 0.05f, -hw + axisLen, -hd, 0.05f, 0.92f, 0.22f, 0.27f) // X Crimson Red
-        addLine(-hw, -hd, 0.05f, -hw, -hd + axisLen, 0.05f, 0.72f, 0.91f, 0.00f) // Y Acid Lime
-        addLine(-hw, -hd, 0.05f, -hw, -hd, axisLen, 0.18f, 0.72f, 0.68f)         // Z Cyan-Teal
+        addLine(-hw, -hd, 0.05f, -hw + axisLen, -hd, 0.05f, 0.95f, 0.26f, 0.21f) // X Red
+        addLine(-hw, -hd, 0.05f, -hw, -hd + axisLen, 0.05f, 0.26f, 0.85f, 0.40f) // Y Green
+        addLine(-hw, -hd, 0.05f, -hw, -hd, axisLen, 0.16f, 0.67f, 0.96f)         // Z Blue
 
         // Build volume wireframe box
         val bc = 0.20f
-        addLine(-hw, -hd, maxH, hw, -hd, maxH, bc, bc + 0.02f, bc)
-        addLine(hw, -hd, maxH, hw, hd, maxH, bc, bc + 0.02f, bc)
-        addLine(hw, hd, maxH, -hw, hd, maxH, bc, bc + 0.02f, bc)
-        addLine(-hw, hd, maxH, -hw, -hd, maxH, bc, bc + 0.02f, bc)
+        addLine(-hw, -hd, maxH, hw, -hd, maxH, bc, bc + 0.03f, bc + 0.07f)
+        addLine(hw, -hd, maxH, hw, hd, maxH, bc, bc + 0.03f, bc + 0.07f)
+        addLine(hw, hd, maxH, -hw, hd, maxH, bc, bc + 0.03f, bc + 0.07f)
+        addLine(-hw, hd, maxH, -hw, -hd, maxH, bc, bc + 0.03f, bc + 0.07f)
 
-        addLine(-hw, -hd, 0f, -hw, -hd, maxH, bc, bc, bc)
-        addLine(hw, -hd, 0f, hw, -hd, maxH, bc, bc, bc)
-        addLine(hw, hd, 0f, hw, hd, maxH, bc, bc, bc)
-        addLine(-hw, hd, 0f, -hw, hd, maxH, bc, bc, bc)
+        addLine(-hw, -hd, 0f, -hw, -hd, maxH, bc, bc, bc + 0.04f)
+        addLine(hw, -hd, 0f, hw, -hd, maxH, bc, bc, bc + 0.04f)
+        addLine(hw, hd, 0f, hw, hd, maxH, bc, bc, bc + 0.04f)
+        addLine(-hw, hd, 0f, -hw, hd, maxH, bc, bc, bc + 0.04f)
 
         val lineArr = FloatArray(lines.size)
         for (i in lines.indices) lineArr[i] = lines[i]
@@ -325,16 +325,18 @@ class OrcaGlRenderer(
             val gpuBuf = getOrCreateMeshVbo(obj.mesh)
             if (gpuBuf.vertexCount <= 0) continue
 
-            // Compute Model matrix matching SceneObject.transformPoint + bed Z snap
+            // Compute Model matrix matching SceneObject.transformPoint (Global Orientation + 3D center pivot + bed Z snap)
             val wb = obj.worldBoundingBox()
             val zSnap = -wb.min.z
+            val lc = obj.mesh.localBounds.center
 
             Matrix.setIdentityM(modelMatrix, 0)
-            Matrix.translateM(modelMatrix, 0, obj.position.x, obj.position.y, obj.position.z + zSnap)
+            Matrix.translateM(modelMatrix, 0, obj.position.x, obj.position.y, obj.position.z + zSnap + lc.z)
+            Matrix.scaleM(modelMatrix, 0, obj.scale.x, obj.scale.y, obj.scale.z)
             Matrix.rotateM(modelMatrix, 0, obj.rotationDeg.z, 0f, 0f, 1f)
             Matrix.rotateM(modelMatrix, 0, obj.rotationDeg.y, 0f, 1f, 0f)
             Matrix.rotateM(modelMatrix, 0, obj.rotationDeg.x, 1f, 0f, 0f)
-            Matrix.scaleM(modelMatrix, 0, obj.scale.x, obj.scale.y, obj.scale.z)
+            Matrix.translateM(modelMatrix, 0, -lc.x, -lc.y, -lc.z)
 
             Matrix.multiplyMM(mvpMatrix, 0, vpMatrix, 0, modelMatrix, 0)
 
@@ -502,31 +504,31 @@ class OrcaGlRenderer(
             addTri(x1, y0, z0, x1, y1, z1, x1, y0, z1, r * 0.95f, g * 0.95f, b * 0.95f)
         }
 
-        // Axis colors (brightened to white-yellow when actively dragged)
-        val xr = if (activeDraggedAxis == 0) 1.0f else 0.95f
-        val xg = if (activeDraggedAxis == 0) 0.95f else 0.22f
-        val xb = if (activeDraggedAxis == 0) 0.20f else 0.28f
+        // Global World Axis colors (X=Red, Y=Green, Z=Blue; brightened to yellow-white when actively dragged)
+        val xr = if (activeDraggedAxis == 0) 1.0f else 0.96f
+        val xg = if (activeDraggedAxis == 0) 0.95f else 0.24f
+        val xb = if (activeDraggedAxis == 0) 0.25f else 0.24f
 
-        val yr = if (activeDraggedAxis == 1) 1.0f else 0.72f
-        val yg = if (activeDraggedAxis == 1) 0.98f else 0.91f
-        val yb = if (activeDraggedAxis == 1) 0.35f else 0.00f
+        val yr = if (activeDraggedAxis == 1) 1.0f else 0.26f
+        val yg = if (activeDraggedAxis == 1) 0.96f else 0.88f
+        val yb = if (activeDraggedAxis == 1) 0.28f else 0.40f
 
         val zr = if (activeDraggedAxis == 2) 1.0f else 0.16f
-        val zg = if (activeDraggedAxis == 2) 0.95f else 0.76f
+        val zg = if (activeDraggedAxis == 2) 0.95f else 0.67f
         val zb = if (activeDraggedAxis == 2) 0.25f else 0.96f
 
-        // Subtle selection bounding box wireframe
+        // Subtle selection bounding box wireframe (Orca Azure #29ABE2)
         val bMinX = wb.min.x; val bMaxX = wb.max.x
         val bMinY = wb.min.y; val bMaxY = wb.max.y
         val bMinZ = 0f;       val bMaxZ = wb.max.z + zSnap
-        addLine(bMinX, bMinY, bMinZ, bMaxX, bMinY, bMinZ, 0.72f, 0.91f, 0.0f)
-        addLine(bMaxX, bMinY, bMinZ, bMaxX, bMaxY, bMinZ, 0.72f, 0.91f, 0.0f)
-        addLine(bMaxX, bMaxY, bMinZ, bMinX, bMaxY, bMinZ, 0.72f, 0.91f, 0.0f)
-        addLine(bMinX, bMaxY, bMinZ, bMinX, bMinY, bMinZ, 0.72f, 0.91f, 0.0f)
+        addLine(bMinX, bMinY, bMinZ, bMaxX, bMinY, bMinZ, 0.16f, 0.67f, 0.89f)
+        addLine(bMaxX, bMinY, bMinZ, bMaxX, bMaxY, bMinZ, 0.16f, 0.67f, 0.89f)
+        addLine(bMaxX, bMaxY, bMinZ, bMinX, bMaxY, bMinZ, 0.16f, 0.67f, 0.89f)
+        addLine(bMinX, bMaxY, bMinZ, bMinX, bMinY, bMinZ, 0.16f, 0.67f, 0.89f)
 
         when (activeGizmoModeOrdinal) {
             0 -> {
-                // MOVE GIZMO: X (Red), Y (Lime), Z (Cyan) shafts + 3D arrowhead pyramids + XY plane handle
+                // MOVE GIZMO (Global World Orientation: +X Red, +Y Green, +Z Blue)
                 val coneLen = (gizmoLen * 0.22f).coerceIn(5f, 16f)
                 val coneRad = coneLen * 0.38f
 
@@ -559,13 +561,13 @@ class OrcaGlRenderer(
 
                 // XY planar drag quad
                 val pOff = gizmoLen * 0.28f
-                addLine(cx + pOff, cy, cz, cx + pOff, cy + pOff, cz, 0.90f, 0.95f, 0.20f)
-                addLine(cx, cy + pOff, cz, cx + pOff, cy + pOff, cz, 0.90f, 0.95f, 0.20f)
-                addCubeHandle(cx, cy, cz, coneRad * 0.55f, 0.95f, 0.98f, 0.85f)
+                addLine(cx + pOff, cy, cz, cx + pOff, cy + pOff, cz, 0.16f, 0.67f, 0.89f)
+                addLine(cx, cy + pOff, cz, cx + pOff, cy + pOff, cz, 0.16f, 0.67f, 0.89f)
+                addCubeHandle(cx, cy, cz, coneRad * 0.55f, 0.90f, 0.95f, 1.0f)
             }
 
             1 -> {
-                // SCALE GIZMO: X, Y, Z shafts + 3D Cube handles at tips + central uniform ring
+                // SCALE GIZMO (Global World X, Y, Z axes + Uniform central handle)
                 val cubeHalf = (gizmoLen * 0.08f).coerceIn(2.2f, 6.5f)
                 addLine(cx, cy, cz, cx + gizmoLen, cy, cz, xr, xg, xb)
                 addCubeHandle(cx + gizmoLen, cy, cz, cubeHalf, xr, xg, xb)
@@ -576,7 +578,7 @@ class OrcaGlRenderer(
                 addLine(cx, cy, cz, cx, cy, cz + gizmoLen, zr, zg, zb)
                 addCubeHandle(cx, cy, cz + gizmoLen, cubeHalf, zr, zg, zb)
 
-                addCubeHandle(cx, cy, cz, cubeHalf * 0.85f, 0.85f, 0.96f, 0.15f)
+                addCubeHandle(cx, cy, cz, cubeHalf * 0.85f, 0.92f, 0.96f, 1.0f)
 
                 // Uniform scale XY ring
                 val ringSegs = 40
@@ -587,13 +589,13 @@ class OrcaGlRenderer(
                     addLine(
                         cx + cos(a0) * ringRad, cy + sin(a0) * ringRad, cz,
                         cx + cos(a1) * ringRad, cy + sin(a1) * ringRad, cz,
-                        0.72f, 0.91f, 0.0f
+                        0.16f, 0.67f, 0.89f
                     )
                 }
             }
 
             2 -> {
-                // ROTATE GIZMO: 3 orthogonal orbital rotation rings (X=Red YZ ring, Y=Lime XZ ring, Z=Cyan XY ring)
+                // ROTATE GIZMO: 3 orthogonal Global World orbital rotation rings (X=Red YZ ring, Y=Green XZ ring, Z=Blue XY ring)
                 val segs = 56
                 val rad = gizmoLen * 0.82f
                 for (i in 0 until segs) {
@@ -621,12 +623,12 @@ class OrcaGlRenderer(
                 val pad = 8f
                 val x0 = bMinX - pad; val x1 = bMaxX + pad
                 val y0 = bMinY - pad; val y1 = bMaxY + pad
-                addLine(x0, y0, cutZ, x1, y0, cutZ, 0.72f, 0.91f, 0.0f)
-                addLine(x1, y0, cutZ, x1, y1, cutZ, 0.72f, 0.91f, 0.0f)
-                addLine(x1, y1, cutZ, x0, y1, cutZ, 0.72f, 0.91f, 0.0f)
-                addLine(x0, y1, cutZ, x0, y0, cutZ, 0.72f, 0.91f, 0.0f)
-                addTri(x0, y0, cutZ, x1, y0, cutZ, x1, y1, cutZ, 0.72f, 0.91f, 0.0f)
-                addTri(x0, y0, cutZ, x1, y1, cutZ, x0, y1, cutZ, 0.72f, 0.91f, 0.0f)
+                addLine(x0, y0, cutZ, x1, y0, cutZ, 0.16f, 0.67f, 0.89f)
+                addLine(x1, y0, cutZ, x1, y1, cutZ, 0.16f, 0.67f, 0.89f)
+                addLine(x1, y1, cutZ, x0, y1, cutZ, 0.16f, 0.67f, 0.89f)
+                addLine(x0, y1, cutZ, x0, y0, cutZ, 0.16f, 0.67f, 0.89f)
+                addTri(x0, y0, cutZ, x1, y0, cutZ, x1, y1, cutZ, 0.16f, 0.67f, 0.89f)
+                addTri(x0, y0, cutZ, x1, y1, cutZ, x0, y1, cutZ, 0.16f, 0.67f, 0.89f)
             }
         }
 
@@ -757,21 +759,43 @@ class OrcaGlRenderer(
                 }
             }
         } else if (activeGizmoModeOrdinal == 2) {
-            // Rotate rings: check handle points on X, Y, Z rings
+            // Rotate rings: test segments along the full 3D X (YZ), Y (XZ), and Z (XY) orbital rings in screen space
             val rad = gizmoLen * 0.82f
-            val pX = projectWorldToScreen(cx, cy + rad, cz)
-            val pY = projectWorldToScreen(cx + rad, cy, cz)
-            val pZ = projectWorldToScreen(cx + rad * 0.707f, cy + rad * 0.707f, cz)
+            val ringSegs = 28
+            var minX = Float.POSITIVE_INFINITY
+            var minY = Float.POSITIVE_INFINITY
+            var minZ = Float.POSITIVE_INFINITY
 
-            val dX = pX?.let { distToSegment2D(screenX, screenY, it.first, it.second, it.first, it.second) } ?: Float.POSITIVE_INFINITY
-            val dY = pY?.let { distToSegment2D(screenX, screenY, it.first, it.second, it.first, it.second) } ?: Float.POSITIVE_INFINITY
-            val dZ = pZ?.let { distToSegment2D(screenX, screenY, it.first, it.second, it.first, it.second) } ?: Float.POSITIVE_INFINITY
+            for (i in 0 until ringSegs) {
+                val a0 = (i.toFloat() / ringSegs) * (2f * PI.toFloat())
+                val a1 = ((i + 1).toFloat() / ringSegs) * (2f * PI.toFloat())
+                val c0 = cos(a0) * rad; val s0 = sin(a0) * rad
+                val c1 = cos(a1) * rad; val s1 = sin(a1) * rad
 
-            val minRingDist = min(dX, min(dY, dZ))
-            if (minRingDist <= hitThresholdPx * 1.25f) {
+                val px0 = projectWorldToScreen(cx, cy + c0, cz + s0)
+                val px1 = projectWorldToScreen(cx, cy + c1, cz + s1)
+                if (px0 != null && px1 != null) {
+                    minX = min(minX, distToSegment2D(screenX, screenY, px0.first, px0.second, px1.first, px1.second))
+                }
+
+                val py0 = projectWorldToScreen(cx + c0, cy, cz + s0)
+                val py1 = projectWorldToScreen(cx + c1, cy, cz + s1)
+                if (py0 != null && py1 != null) {
+                    minY = min(minY, distToSegment2D(screenX, screenY, py0.first, py0.second, py1.first, py1.second))
+                }
+
+                val pz0 = projectWorldToScreen(cx + c0, cy + s0, cz)
+                val pz1 = projectWorldToScreen(cx + c1, cy + s1, cz)
+                if (pz0 != null && pz1 != null) {
+                    minZ = min(minZ, distToSegment2D(screenX, screenY, pz0.first, pz0.second, pz1.first, pz1.second))
+                }
+            }
+
+            val minRingDist = min(minX, min(minY, minZ))
+            if (minRingDist <= hitThresholdPx * 0.95f) {
                 return when (minRingDist) {
-                    dX -> 0
-                    dY -> 1
+                    minX -> 0
+                    minY -> 1
                     else -> 2
                 }
             }
@@ -800,6 +824,101 @@ class OrcaGlRenderer(
         }
 
         return -1
+    }
+
+    /**
+     * Projects a screen-space touch delta `(dxPx, dyPx)` onto the Global World Axis `(axisX, axisY, axisZ)`
+     * anchored at the selected object's 3D world center, returning the exact displacement in millimeters (mm)
+     * along that global axis regardless of camera yaw or pitch.
+     */
+    fun projectWorldAxisDelta(dxPx: Float, dyPx: Float, axisX: Float, axisY: Float, axisZ: Float): Float {
+        val selId = selectedObjectId
+        val obj = if (selId != null) sceneObjects.firstOrNull { it.id == selId && it.visible } else null
+        val cx: Float
+        val cy: Float
+        val cz: Float
+        if (obj != null) {
+            val wb = obj.worldBoundingBox()
+            val zSnap = -wb.min.z
+            cx = (wb.min.x + wb.max.x) * 0.5f
+            cy = (wb.min.y + wb.max.y) * 0.5f
+            cz = ((wb.min.z + wb.max.z) * 0.5f) + zSnap
+        } else {
+            cx = cameraTargetX
+            cy = cameraTargetY
+            cz = cameraTargetZ
+        }
+
+        val stepMm = 10f
+        val p0 = projectWorldToScreen(cx, cy, cz)
+        val p1 = projectWorldToScreen(cx + axisX * stepMm, cy + axisY * stepMm, cz + axisZ * stepMm)
+        if (p0 == null || p1 == null) {
+            val fallbackScale = (cameraDistance * 0.0015f).coerceIn(0.05f, 1.5f)
+            return (dxPx - dyPx) * fallbackScale
+        }
+
+        // Screen pixels per 1mm along Global Axis (axisX, axisY, axisZ)
+        val vx = (p1.first - p0.first) / stepMm
+        val vy = (p1.second - p0.second) / stepMm
+        val lenSq = vx * vx + vy * vy
+        if (lenSq < 0.04f) return 0f
+
+        return ((dxPx * vx + dyPx * vy) / lenSq.coerceAtLeast(0.25f)).coerceIn(-25f, 25f)
+    }
+
+    /**
+     * Computes the signed angular rotation delta (in degrees) around Global World Axis `axis` (`0=X`, `1=Y`, `2=Z`)
+     * when dragging from `(prevX, prevY)` to `(curX, curY)` around the selected object's projected screen center.
+     */
+    fun computeScreenRotationDeltaDeg(prevX: Float, prevY: Float, curX: Float, curY: Float, axis: Int): Float {
+        val selId = selectedObjectId
+        val obj = if (selId != null) sceneObjects.firstOrNull { it.id == selId && it.visible } else null
+        val cx: Float
+        val cy: Float
+        val cz: Float
+        if (obj != null) {
+            val wb = obj.worldBoundingBox()
+            val zSnap = -wb.min.z
+            cx = (wb.min.x + wb.max.x) * 0.5f
+            cy = (wb.min.y + wb.max.y) * 0.5f
+            cz = ((wb.min.z + wb.max.z) * 0.5f) + zSnap
+        } else {
+            cx = cameraTargetX
+            cy = cameraTargetY
+            cz = cameraTargetZ
+        }
+
+        val pCenter = projectWorldToScreen(cx, cy, cz) ?: return (curX - prevX) * 0.5f
+        val r0x = prevX - pCenter.first
+        val r0y = prevY - pCenter.second
+        val r1x = curX - pCenter.first
+        val r1y = curY - pCenter.second
+
+        val radSq0 = r0x * r0x + r0y * r0y
+        val radSq1 = r1x * r1x + r1y * r1y
+        if (radSq0 < 16f || radSq1 < 16f) {
+            return (curX - prevX - (curY - prevY)) * 0.45f
+        }
+
+        val a0 = kotlin.math.atan2(r0y, r0x)
+        val a1 = kotlin.math.atan2(r1y, r1x)
+        var dAngle = a1 - a0
+        while (dAngle > PI.toFloat()) dAngle -= 2f * PI.toFloat()
+        while (dAngle < -PI.toFloat()) dAngle += 2f * PI.toFloat()
+
+        // Determine whether camera looks along +Axis or -Axis so screen clockwise/counter-clockwise matches right-hand rule
+        val yawRad = cameraYawDeg * (PI.toFloat() / 180f)
+        val pitchRad = cameraPitchDeg.coerceIn(-85f, 85f) * (PI.toFloat() / 180f)
+        val viewDirX = -cos(pitchRad) * cos(yawRad)
+        val viewDirY = -cos(pitchRad) * sin(yawRad)
+        val viewDirZ = -sin(pitchRad)
+        val axisDotView = when (axis) {
+            0 -> viewDirX
+            1 -> viewDirY
+            else -> viewDirZ
+        }
+        val sign = if (axisDotView >= 0f) 1.0f else -1.0f
+        return (dAngle * (180f / PI.toFloat()) * sign).coerceIn(-25f, 25f)
     }
 
     private fun getOrCreateMeshVbo(mesh: MeshData): GpuMeshBuffer {
@@ -989,9 +1108,9 @@ class OrcaGlRenderer(
 
                 vec3 base = uBaseColor;
 
-                // Selection highlight tint (Lumos Acid Lime)
+                // Selection highlight tint (DolphinSlicer Azure/Teal)
                 if (uSelected > 0.5) {
-                    base = mix(base, vec3(0.72, 0.91, 0.0), 0.28);
+                    base = mix(base, vec3(0.16, 0.67, 0.89), 0.28);
                 }
 
                 // GPU Overhang Detection: highlight downward-facing surfaces steeper than threshold
