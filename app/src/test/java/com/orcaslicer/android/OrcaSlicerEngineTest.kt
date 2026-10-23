@@ -426,4 +426,89 @@ class OrcaSlicerEngineTest {
         assertTrue("Complex scene must produce layers", result.layers.size > 50)
         assertTrue("Complex scene must produce valid GPU ribbon vertices", result.gpuRibbonVertices.isNotEmpty())
     }
+
+    @Test
+    fun `sliced toolpaths and G-code preserve exact mesh outer bounds and inner holes`() = runTest {
+        // 1. Torus with majorRadius=16, minorRadius=4 has:
+        //    - Outer diameter = 40mm (radius 20mm -> [-20, +20])
+        //    - Inner hole diameter = 24mm (radius 12mm -> [-12, +12] at mid-height Z=4mm)
+        val torusMesh = ProceduralMeshes.createTorus(majorRadius = 16f, minorRadius = 4f)
+        val torusObj = SceneObject(
+            id = "hole-fidelity-torus",
+            name = "HoleFidelityTorus",
+            sourceFormat = "STL",
+            mesh = torusMesh
+        )
+        val process = BuiltInPresets.processes.first().copy(
+            brimType = com.orcaslicer.android.model.BrimType.NONE,
+            skirtLoops = 0,
+            enableSupport = false
+        )
+        val slice = SlicingEngine.sliceScene(
+            objects = listOf(torusObj),
+            printer = BuiltInPresets.printers.first(),
+            filament = BuiltInPresets.filaments.first(),
+            process = process
+        ).getOrThrow()
+
+        // Find the mid-plane layer at Z ~ 4.0mm where the torus cross-section is widest
+        val midLayer = slice.layers.minByOrNull { kotlin.math.abs(it.zHeightMm - 4.0f) }!!
+        val extrusionSegs = midLayer.segments.filter {
+            it.type != com.orcaslicer.android.model.ToolpathType.TRAVEL && it.extrusionMm > 0f
+        }
+        assertTrue("Mid-layer must have extrusion segments", extrusionSegs.size >= 20)
+
+        var minX = Float.POSITIVE_INFINITY
+        var maxX = Float.NEGATIVE_INFINITY
+        var minY = Float.POSITIVE_INFINITY
+        var maxY = Float.NEGATIVE_INFINITY
+        for (seg in extrusionSegs) {
+            minX = minOf(minX, seg.start.x, seg.end.x)
+            maxX = maxOf(maxX, seg.start.x, seg.end.x)
+            minY = minOf(minY, seg.start.y, seg.end.y)
+            maxY = maxOf(maxY, seg.start.y, seg.end.y)
+
+            // Every extrusion point AND midpoint must stay outside the central hole (radius < 10.5mm)
+            val midPtX = (seg.start.x + seg.end.x) * 0.5f
+            val midPtY = (seg.start.y + seg.end.y) * 0.5f
+            val rMid = kotlin.math.sqrt(midPtX * midPtX + midPtY * midPtY)
+            assertTrue(
+                "No infill or wall segment may cross inside the torus central hole (rMid=$rMid, type=${seg.type})",
+                rMid >= 10.5f
+            )
+        }
+
+        // Outer wall centerline is inset by half outerWallWidth (~0.21mm) from 20.0mm -> ~19.79mm
+        assertEquals("Outer minX matches mesh radius -20mm", -19.79f, minX, 0.45f)
+        assertEquals("Outer maxX matches mesh radius +20mm", 19.79f, maxX, 0.45f)
+        assertEquals("Outer minY matches mesh radius -20mm", -19.79f, minY, 0.45f)
+        assertEquals("Outer maxY matches mesh radius +20mm", 19.79f, maxY, 0.45f)
+
+        // 2. Re-import generated G-code and verify its 3D bounding box matches the original mesh
+        val reimportedRes = ModelImporter.importFromStream(
+            inputStream = ByteArrayInputStream(slice.gcodeText.encodeToByteArray()),
+            fileName = "torus_verify.gcode"
+        ).getOrThrow() as ModelImporter.ImportedContent.GCodePreview
+        val gcodeLayers = reimportedRes.sliceResult.layers
+        assertEquals("Re-imported G-code layer count matches sliced layer count", slice.layers.size, gcodeLayers.size)
+
+        var gMinX = Float.POSITIVE_INFINITY
+        var gMaxX = Float.NEGATIVE_INFINITY
+        var gMinY = Float.POSITIVE_INFINITY
+        var gMaxY = Float.NEGATIVE_INFINITY
+        for (l in gcodeLayers) {
+            for (seg in l.segments) {
+                if (seg.type != com.orcaslicer.android.model.ToolpathType.TRAVEL && seg.extrusionMm > 0f) {
+                    gMinX = minOf(gMinX, seg.start.x, seg.end.x)
+                    gMaxX = maxOf(gMaxX, seg.start.x, seg.end.x)
+                    gMinY = minOf(gMinY, seg.start.y, seg.end.y)
+                    gMaxY = maxOf(gMaxY, seg.start.y, seg.end.y)
+                }
+            }
+        }
+        assertEquals("Re-imported G-code width X matches 40mm torus", 39.58f, gMaxX - gMinX, 0.8f)
+        assertEquals("Re-imported G-code depth Y matches 40mm torus", 39.58f, gMaxY - gMinY, 0.8f)
+        assertEquals("Re-imported G-code center X is aligned at 0.0mm", 0.0f, (gMinX + gMaxX) * 0.5f, 0.25f)
+        assertEquals("Re-imported G-code center Y is aligned at 0.0mm", 0.0f, (gMinY + gMaxY) * 0.5f, 0.25f)
+    }
 }

@@ -360,6 +360,10 @@ object ModelImporter {
         var curY = 0f
         var curZ = 0.2f
         var curF = 3000f
+        var bedCenterX = 128f
+        var bedCenterY = 128f
+        var seenFirstLayerChange = false
+        val hasLayerChangeMarkers = gcodeText.contains(";LAYER_CHANGE", ignoreCase = true)
         var totalExtrusionMm = 0f
         var totalTimeSeconds = 0f
         val featureTimes = HashMap<ToolpathType, Float>()
@@ -367,7 +371,11 @@ object ModelImporter {
         var line: String? = reader.readLine()
         while (line != null) {
             val trimmed = line.trim()
-            if (trimmed.startsWith(";TYPE:", ignoreCase = true)) {
+            if (trimmed.startsWith("; bed_center_x =", ignoreCase = true)) {
+                trimmed.substringAfter("=").trim().toFloatOrNull()?.let { bedCenterX = it }
+            } else if (trimmed.startsWith("; bed_center_y =", ignoreCase = true)) {
+                trimmed.substringAfter("=").trim().toFloatOrNull()?.let { bedCenterY = it }
+            } else if (trimmed.startsWith(";TYPE:", ignoreCase = true)) {
                 val typeStr = trimmed.substringAfter(":").trim().lowercase(Locale.ROOT)
                 currentType = when {
                     typeStr.contains("outer") || typeStr.contains("external") -> ToolpathType.OUTER_WALL
@@ -381,6 +389,7 @@ object ModelImporter {
                     else -> ToolpathType.OUTER_WALL
                 }
             } else if (trimmed.startsWith(";LAYER_CHANGE", ignoreCase = true)) {
+                seenFirstLayerChange = true
                 if (currentLayerSegments.isNotEmpty()) {
                     layers.add(
                         SliceLayer(
@@ -413,6 +422,15 @@ object ModelImporter {
                     }
                 }
 
+                if (hasLayerChangeMarkers && !seenFirstLayerChange) {
+                    // Track nozzle position during start G-code / purge line without adding purge line to model preview
+                    curX = nextX
+                    curY = nextY
+                    curZ = nextZ
+                    line = reader.readLine()
+                    continue
+                }
+
                 if (kotlin.math.abs(nextZ - curZ) > 0.01f && deltaE <= 0f) {
                     if (currentLayerSegments.isNotEmpty() && nextZ > currentLayerZ + 0.04f) {
                         layers.add(
@@ -430,9 +448,9 @@ object ModelImporter {
                     }
                 }
 
-                // Shift from printer bed coordinates (0..bedSize) to centered build plate coordinates if needed
-                val start = Vec3(curX - 110f, curY - 110f, curZ)
-                val end = Vec3(nextX - 110f, nextY - 110f, nextZ)
+                // Shift from printer bed coordinates (0..bedSize) to centered build plate coordinates
+                val start = Vec3(curX - bedCenterX, curY - bedCenterY, curZ)
+                val end = Vec3(nextX - bedCenterX, nextY - bedCenterY, nextZ)
                 val dist = start.distanceTo(end)
 
                 if (dist > 0.01f) {

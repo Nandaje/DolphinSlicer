@@ -685,8 +685,8 @@ class SliceResult(
             }
         }
 
-        // Cap GPU VBO vertex buffers on ultra-complex prints so mobile heaps never hit OutOfMemoryError
-        val maxGpuSegments = 120_000
+        // Keep 100% of segments up to 350,000 segments so perimeters, curves, and infill never have gaps in 3D preview
+        val maxGpuSegments = 350_000
         val segStride = if (rawTotalSegments > maxGpuSegments) {
             ((rawTotalSegments + maxGpuSegments - 1) / maxGpuSegments).coerceAtLeast(1)
         } else {
