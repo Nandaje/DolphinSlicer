@@ -1029,7 +1029,7 @@ private fun OrcaMobileReferenceHeader(
                         OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
                         Column {
                             Text(
-                                text = "DolphinSlicer v1.2.3",
+                                text = "DolphinSlicer v1.2.4",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = OrcaTealBright
@@ -3688,22 +3688,53 @@ private fun DeviceNetworkPanel(
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val prefs = remember(context) {
+        viewModel.initPreferences(context.applicationContext)
+        context.applicationContext.getSharedPreferences("dolphin_slicer_prefs", android.content.Context.MODE_PRIVATE)
+    }
     var showApiDrawer by remember { mutableStateOf(false) }
     var webViewRef by remember { mutableStateOf<android.webkit.WebView?>(null) }
     var isLoadingPage by remember { mutableStateOf(false) }
     var loadProgress by remember { mutableIntStateOf(0) }
-    var hasNavigatedUrl by remember { mutableStateOf(state.printerHost.trim() != "192.168.1.100" && state.printerHost.isNotBlank()) }
+    var hasNavigatedUrl by remember {
+        val hasSavedPref = prefs.contains("printer_web_url") || prefs.contains("printer_host")
+        val nonDefaultState = state.printerWebUrl.isNotBlank() ||
+            (state.printerHost.trim() != "192.168.1.100" && state.printerHost.isNotBlank())
+        mutableStateOf(hasSavedPref || nonDefaultState)
+    }
     var pageLoadError by remember { mutableStateOf<String?>(null) }
 
     var addressBarText by remember {
-        val initHost = state.printerHost.trim().ifEmpty { "192.168.1.100" }
+        val savedWebUrl = prefs.getString("printer_web_url", null)?.trim().orEmpty()
+        val savedHost = prefs.getString("printer_host", null)?.trim().orEmpty()
+        val initTarget = savedWebUrl
+            .ifEmpty { state.printerWebUrl.trim() }
+            .ifEmpty { savedHost }
+            .ifEmpty { state.printerHost.trim() }
+            .ifEmpty { "192.168.1.100" }
         mutableStateOf(
-            if (initHost.startsWith("http://", ignoreCase = true) || initHost.startsWith("https://", ignoreCase = true)) {
-                initHost
+            if (initTarget.startsWith("http://", ignoreCase = true) || initTarget.startsWith("https://", ignoreCase = true)) {
+                initTarget
             } else {
-                "http://$initHost"
+                "http://$initTarget"
             }
         )
+    }
+
+    fun persistAddressInput(rawInput: String) {
+        val trimmed = rawInput.trim()
+        if (trimmed.isEmpty()) return
+        val normalizedUrl = if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
+            trimmed
+        } else {
+            "http://$trimmed"
+        }
+        val hostOnly = normalizedUrl.substringAfter("://").substringBefore("/").substringBefore(":")
+        if (hostOnly.isNotBlank()) {
+            viewModel.updatePrinterNetworkConfig(host = hostOnly, webUrl = normalizedUrl)
+        } else {
+            viewModel.updatePrinterNetworkConfig(webUrl = normalizedUrl)
+        }
     }
 
     fun navigateToAddress(rawInput: String) {
@@ -3715,10 +3746,7 @@ private fun DeviceNetworkPanel(
             "http://$trimmed"
         }
         addressBarText = normalizedUrl
-        val hostOnly = normalizedUrl.substringAfter("://").substringBefore("/").substringBefore(":")
-        if (hostOnly.isNotBlank()) {
-            viewModel.updatePrinterNetworkConfig(host = hostOnly)
-        }
+        persistAddressInput(normalizedUrl)
         pageLoadError = null
         hasNavigatedUrl = true
         isLoadingPage = true
@@ -3805,7 +3833,10 @@ private fun DeviceNetworkPanel(
                 )
                 androidx.compose.foundation.text.BasicTextField(
                     value = addressBarText,
-                    onValueChange = { addressBarText = it },
+                    onValueChange = {
+                        addressBarText = it
+                        persistAddressInput(it)
+                    },
                     singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(
                         color = Color.White,
@@ -3934,8 +3965,9 @@ private fun DeviceNetworkPanel(
                         OutlinedTextField(
                             value = state.printerHost,
                             onValueChange = {
-                                viewModel.updatePrinterNetworkConfig(host = it)
-                                addressBarText = "http://${it.trim()}"
+                                val nextUrl = "http://${it.trim()}"
+                                viewModel.updatePrinterNetworkConfig(host = it, webUrl = nextUrl)
+                                addressBarText = nextUrl
                             },
                             label = { Text("Klipper IP / Hostname", fontSize = 10.sp) },
                             singleLine = true,
@@ -4052,6 +4084,7 @@ private fun DeviceNetworkPanel(
                                 isLoadingPage = true
                                 if (!url.isNullOrBlank() && url != "about:blank") {
                                     addressBarText = url
+                                    persistAddressInput(url)
                                     hasNavigatedUrl = true
                                 }
                             }
@@ -4180,7 +4213,10 @@ private fun DeviceNetworkPanel(
 
                             OutlinedTextField(
                                 value = addressBarText,
-                                onValueChange = { addressBarText = it },
+                                onValueChange = {
+                                    addressBarText = it
+                                    persistAddressInput(it)
+                                },
                                 label = { Text("Printer IP / URL (e.g. http://192.168.1.50 or http://fluidd.local)", fontSize = 11.sp) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()

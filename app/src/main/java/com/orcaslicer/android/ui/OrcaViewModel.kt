@@ -129,6 +129,7 @@ data class OrcaUiState(
     val printerPort: String = "7125",
     val printerApiKey: String = "",
     val printerProtocol: NetworkProtocol = NetworkProtocol.MOONRAKER_KLIPPER,
+    val printerWebUrl: String = "",
     val printerTelemetry: PrinterTelemetry? = null,
     val isNetworkBusy: Boolean = false,
 
@@ -143,7 +144,31 @@ class OrcaViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(OrcaUiState())
     val uiState: StateFlow<OrcaUiState> = _uiState.asStateFlow()
 
+    private var prefs: android.content.SharedPreferences? = null
     private var triggerCounter = 1
+
+    fun initPreferences(context: android.content.Context) {
+        if (prefs != null) return
+        val sp = context.getSharedPreferences("dolphin_slicer_prefs", android.content.Context.MODE_PRIVATE)
+        prefs = sp
+        val savedHost = sp.getString("printer_host", null)?.takeIf { it.isNotBlank() } ?: "192.168.1.100"
+        val savedPort = sp.getString("printer_port", null)?.takeIf { it.isNotBlank() } ?: "7125"
+        val savedApiKey = sp.getString("printer_api_key", null) ?: ""
+        val savedProtoName = sp.getString("printer_protocol", null)
+        val savedProto = NetworkProtocol.entries.firstOrNull { it.name == savedProtoName }
+            ?: NetworkProtocol.MOONRAKER_KLIPPER
+        val savedWebUrl = sp.getString("printer_web_url", null) ?: ""
+
+        _uiState.update {
+            it.copy(
+                printerHost = savedHost,
+                printerPort = savedPort,
+                printerApiKey = savedApiKey,
+                printerProtocol = savedProto,
+                printerWebUrl = savedWebUrl
+            )
+        }
+    }
 
     fun selectWorkspaceTab(tab: WorkspaceTab) {
         _uiState.update { it.copy(activeWorkspaceTab = tab) }
@@ -985,15 +1010,25 @@ class OrcaViewModel : ViewModel() {
         host: String = _uiState.value.printerHost,
         port: String = _uiState.value.printerPort,
         apiKey: String = _uiState.value.printerApiKey,
-        protocol: NetworkProtocol = _uiState.value.printerProtocol
+        protocol: NetworkProtocol = _uiState.value.printerProtocol,
+        webUrl: String = _uiState.value.printerWebUrl
     ) {
         _uiState.update {
             it.copy(
                 printerHost = host,
                 printerPort = port,
                 printerApiKey = apiKey,
-                printerProtocol = protocol
+                printerProtocol = protocol,
+                printerWebUrl = webUrl
             )
+        }
+        prefs?.edit()?.apply {
+            putString("printer_host", host)
+            putString("printer_port", port)
+            putString("printer_api_key", apiKey)
+            putString("printer_protocol", protocol.name)
+            putString("printer_web_url", webUrl)
+            apply()
         }
     }
 
