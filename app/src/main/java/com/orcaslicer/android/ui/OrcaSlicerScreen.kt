@@ -490,7 +490,7 @@ private fun OrcaMobileReferenceHeader(
                                 .padding(horizontal = 3.dp, vertical = 0.5.dp)
                         ) {
                             Text(
-                                text = "v1.1.5",
+                                text = "v1.1.7",
                                 fontSize = 8.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = OrcaTealBright,
@@ -988,7 +988,7 @@ private fun OrcaMobileReferenceHeader(
                         OrcaWhaleVectorIcon(modifier = Modifier.size(26.dp))
                         Column {
                             Text(
-                                text = "DolphinSlicer v1.1.5",
+                                text = "DolphinSlicer v1.1.7",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = OrcaTealBright

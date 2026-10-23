@@ -3455,89 +3455,203 @@ internal fun PrinterProfileBrowserModal(
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.94f)
-                .padding(vertical = 20.dp),
+                .padding(vertical = 12.dp),
             shape = RoundedCornerShape(12.dp),
             color = OrcaCardBg
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier
+                    .border(1.dp, OrcaBorder, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
+                // Compact single-line header row (never wraps or stretches vertically)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.Print, contentDescription = null, tint = OrcaTealBright)
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Print,
+                            contentDescription = null,
+                            tint = OrcaTealBright,
+                            modifier = Modifier.size(16.dp)
+                        )
                         Text(
-                            text = "Select Printer (${filtered.size} Models)",
-                            fontSize = 15.sp,
+                            text = "Select Printer (${filtered.size})",
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = OrcaTextPrimary
+                            color = OrcaTextPrimary,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Button(
-                            onClick = onSyncServerClick,
-                            enabled = !state.isSyncingServerProfiles,
-                            colors = ButtonDefaults.buttonColors(containerColor = OrcaTeal, contentColor = Color.White),
-                            shape = RoundedCornerShape(6.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Sync Server compact pill
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (state.isSyncingServerProfiles) OrcaElevatedBg else OrcaTeal)
+                                .clickable(enabled = !state.isSyncingServerProfiles, onClick = onSyncServerClick)
+                                .padding(horizontal = 8.dp, vertical = 4.5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (state.isSyncingServerProfiles) "Syncing..." else "Sync Server", fontSize = 11.sp)
+                            Icon(
+                                imageVector = Icons.Default.CloudDownload,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = if (state.isSyncingServerProfiles) "Sync..." else "Sync",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
-                        OutlinedButton(onClick = onImportProfileClick, shape = RoundedCornerShape(6.dp)) {
-                            Text("Import .json", fontSize = 11.sp)
-                        }
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = OrcaTextSecondary)
-                        }
-                    }
-                }
 
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search printer (Ender5P, Bambu, K1, Voron, Prusa, SV08...)") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    vendors.forEach { v ->
-                        val active = selectedVendor == v
+                        // Import .json compact pill
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(6.dp))
-                                .background(if (active) OrcaTeal else OrcaInputBg)
-                                .border(1.dp, if (active) OrcaTealBright else OrcaBorder, RoundedCornerShape(6.dp))
-                                .clickable { selectedVendor = v }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .background(OrcaInputBg)
+                                .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
+                                .clickable(onClick = onImportProfileClick)
+                                .padding(horizontal = 7.dp, vertical = 4.5.dp),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = v,
-                                fontSize = 11.sp,
-                                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                                color = Color.White
+                                text = "+ .json",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = OrcaTextPrimary,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+
+                        // Close button
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(OrcaInputBg)
+                                .clickable(onClick = onDismiss),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = OrcaTextSecondary,
+                                modifier = Modifier.size(14.dp)
                             )
                         }
                     }
                 }
 
+                // Compact 32dp single-line search bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(32.dp)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(OrcaInputBg)
+                        .border(1.dp, OrcaBorder, RoundedCornerShape(7.dp))
+                        .padding(horizontal = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = OrcaTextSecondary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = "Search printer (Bambu, Creality, Voron, Prusa, K1...)",
+                                fontSize = 10.5.sp,
+                                color = OrcaUnitText,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            singleLine = true,
+                            textStyle = TextStyle(color = OrcaTextPrimary, fontSize = 11.sp),
+                            cursorBrush = SolidColor(OrcaTealBright),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    if (searchQuery.isNotEmpty()) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Clear",
+                            tint = OrcaTextSecondary,
+                            modifier = Modifier
+                                .size(13.dp)
+                                .clickable { searchQuery = "" }
+                        )
+                    }
+                }
+
+                // Compact vendor filter chips
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    vendors.forEach { v ->
+                        val active = selectedVendor == v
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(if (active) OrcaTeal else OrcaInputBg)
+                                .border(1.dp, if (active) OrcaTealBright else OrcaBorder, RoundedCornerShape(5.dp))
+                                .clickable { selectedVendor = v }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = v,
+                                fontSize = 10.sp,
+                                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                                color = Color.White,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                }
+
+                // Scrollable printer list
                 Column(
                     modifier = Modifier
-                        .height(360.dp)
+                        .height(340.dp)
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     filtered.forEach { p ->
                         val isSel = p.id == state.selectedPrinter.id
@@ -3548,20 +3662,34 @@ internal fun PrinterProfileBrowserModal(
                                 .background(if (isSel) Color(0xFF1A3A35) else OrcaInputBg)
                                 .border(1.dp, if (isSel) OrcaTealBright else OrcaBorder, RoundedCornerShape(6.dp))
                                 .clickable { onSelectPrinter(p) }
-                                .padding(horizontal = 12.dp, vertical = 9.dp),
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(p.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrcaTextPrimary)
+                            Column(modifier = Modifier.weight(1f).padding(end = 6.dp)) {
                                 Text(
-                                    "${p.vendor} • ${p.bedWidthX.toInt()}×${p.bedDepthY.toInt()}×${p.maxPrintHeightZ.toInt()}mm • Nozzle ${p.nozzleDiameterMm}mm • ${p.gcodeFlavor.label}",
-                                    fontSize = 11.sp,
-                                    color = OrcaTextSecondary
+                                    text = p.name,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = OrcaTextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${p.vendor} • ${p.bedWidthX.toInt()}×${p.bedDepthY.toInt()}×${p.maxPrintHeightZ.toInt()}mm • Nozzle ${p.nozzleDiameterMm}mm • ${p.gcodeFlavor.label}",
+                                    fontSize = 9.5.sp,
+                                    color = OrcaTextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                             if (isSel) {
-                                Icon(Icons.Default.Check, contentDescription = null, tint = OrcaTealBright)
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = OrcaTealBright,
+                                    modifier = Modifier.size(15.dp)
+                                )
                             }
                         }
                     }
@@ -3601,84 +3729,203 @@ internal fun FilamentProfileBrowserModal(
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.94f)
-                .padding(vertical = 20.dp),
+                .padding(vertical = 12.dp),
             shape = RoundedCornerShape(12.dp),
             color = OrcaCardBg
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier
+                    .border(1.dp, OrcaBorder, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
+                // Compact single-line header row (never wraps or stretches vertically)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.Palette, contentDescription = null, tint = OrcaTealBright)
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Palette,
+                            contentDescription = null,
+                            tint = OrcaTealBright,
+                            modifier = Modifier.size(16.dp)
+                        )
                         Text(
-                            text = "Select Filament (${filtered.size} Profiles)",
-                            fontSize = 15.sp,
+                            text = "Select Filament (${filtered.size})",
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = OrcaTextPrimary
+                            color = OrcaTextPrimary,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Button(
-                            onClick = onSyncServerClick,
-                            enabled = !state.isSyncingServerProfiles,
-                            colors = ButtonDefaults.buttonColors(containerColor = OrcaTeal, contentColor = Color.White),
-                            shape = RoundedCornerShape(6.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Sync Server compact pill
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (state.isSyncingServerProfiles) OrcaElevatedBg else OrcaTeal)
+                                .clickable(enabled = !state.isSyncingServerProfiles, onClick = onSyncServerClick)
+                                .padding(horizontal = 8.dp, vertical = 4.5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (state.isSyncingServerProfiles) "Syncing..." else "Sync Server", fontSize = 11.sp)
+                            Icon(
+                                imageVector = Icons.Default.CloudDownload,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = if (state.isSyncingServerProfiles) "Sync..." else "Sync",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
-                        OutlinedButton(onClick = onImportProfileClick, shape = RoundedCornerShape(6.dp)) {
-                            Text("Import .json", fontSize = 11.sp)
+
+                        // Import .json compact pill
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(OrcaInputBg)
+                                .border(1.dp, OrcaBorder, RoundedCornerShape(6.dp))
+                                .clickable(onClick = onImportProfileClick)
+                                .padding(horizontal = 7.dp, vertical = 4.5.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "+ .json",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = OrcaTextPrimary,
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = OrcaTextSecondary)
+
+                        // Close button
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(OrcaInputBg)
+                                .clickable(onClick = onDismiss),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = OrcaTextSecondary,
+                                modifier = Modifier.size(14.dp)
+                            )
                         }
                     }
                 }
 
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search filament (Bambu, eSUN, Polymaker, PLA, PETG, ABS, ASA, TPU...)") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Compact 32dp single-line search bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(32.dp)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(OrcaInputBg)
+                        .border(1.dp, OrcaBorder, RoundedCornerShape(7.dp))
+                        .padding(horizontal = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = OrcaTextSecondary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = "Search filament (Bambu, eSUN, PLA, PETG, ABS, TPU...)",
+                                fontSize = 10.5.sp,
+                                color = OrcaUnitText,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            singleLine = true,
+                            textStyle = TextStyle(color = OrcaTextPrimary, fontSize = 11.sp),
+                            cursorBrush = SolidColor(OrcaTealBright),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    if (searchQuery.isNotEmpty()) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Clear",
+                            tint = OrcaTextSecondary,
+                            modifier = Modifier
+                                .size(13.dp)
+                                .clickable { searchQuery = "" }
+                        )
+                    }
+                }
 
+                // Compact vendor filter chips
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     vendors.forEach { v ->
                         val active = selectedVendor == v
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
+                                .clip(RoundedCornerShape(5.dp))
                                 .background(if (active) OrcaTeal else OrcaInputBg)
-                                .border(1.dp, if (active) OrcaTealBright else OrcaBorder, RoundedCornerShape(6.dp))
+                                .border(1.dp, if (active) OrcaTealBright else OrcaBorder, RoundedCornerShape(5.dp))
                                 .clickable { selectedVendor = v }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Text(v, fontSize = 11.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium, color = Color.White)
+                            Text(
+                                text = v,
+                                fontSize = 10.sp,
+                                fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                                color = Color.White,
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
                     }
                 }
 
+                // Scrollable filament list
                 Column(
                     modifier = Modifier
-                        .height(360.dp)
+                        .height(340.dp)
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     filtered.forEach { f ->
                         val isSel = f.id == state.selectedFilament.id
@@ -3689,33 +3936,47 @@ internal fun FilamentProfileBrowserModal(
                                 .background(if (isSel) Color(0xFF1A3A35) else OrcaInputBg)
                                 .border(1.dp, if (isSel) OrcaTealBright else OrcaBorder, RoundedCornerShape(6.dp))
                                 .clickable { onSelectFilament(f) }
-                                .padding(horizontal = 12.dp, vertical = 9.dp),
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).padding(end = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(18.dp)
+                                        .size(14.dp)
                                         .clip(RoundedCornerShape(3.dp))
                                         .background(Color(f.colorHex))
                                         .border(1.dp, Color.White.copy(alpha = 0.6f), RoundedCornerShape(3.dp))
                                 )
                                 Column {
-                                    Text(f.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrcaTextPrimary)
                                     Text(
-                                        "${f.vendor} • ${f.materialType} • ${f.nozzleTempOtherC}°C / Bed ${f.bedTempOtherC}°C • ${f.currencySymbol}${String.format(Locale.US, "%.2f", f.costPerKgUsd)}/kg",
-                                        fontSize = 11.sp,
-                                        color = OrcaTextSecondary
+                                        text = f.name,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = OrcaTextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${f.vendor} • ${f.materialType} • ${f.nozzleTempOtherC}°C / Bed ${f.bedTempOtherC}°C • ${f.currencySymbol}${String.format(Locale.US, "%.2f", f.costPerKgUsd)}/kg",
+                                        fontSize = 9.5.sp,
+                                        color = OrcaTextSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
                             if (isSel) {
-                                Icon(Icons.Default.Check, contentDescription = null, tint = OrcaTealBright)
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = OrcaTealBright,
+                                    modifier = Modifier.size(15.dp)
+                                )
                             }
                         }
                     }
@@ -3816,12 +4077,30 @@ fun PrinterSettingsModalDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.Print, contentDescription = null, tint = OrcaTealBright)
-                        Text("Printer Settings (${p.name})", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = OrcaTextPrimary)
+                    Row(
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Default.Print, contentDescription = null, tint = OrcaTealBright, modifier = Modifier.size(16.dp))
+                        Text(
+                            text = "Printer Settings (${p.name})",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = OrcaTextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = OrcaTextSecondary)
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(OrcaInputBg)
+                            .clickable(onClick = onDismiss),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = OrcaTextSecondary, modifier = Modifier.size(14.dp))
                     }
                 }
 
@@ -3974,12 +4253,30 @@ fun FilamentSettingsModalDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.Palette, contentDescription = null, tint = OrcaTealBright)
-                        Text("Filament Settings (${f.name})", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = OrcaTextPrimary)
+                    Row(
+                        modifier = Modifier.weight(1f).padding(end = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Default.Palette, contentDescription = null, tint = OrcaTealBright, modifier = Modifier.size(16.dp))
+                        Text(
+                            text = "Filament Settings (${f.name})",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = OrcaTextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = OrcaTextSecondary)
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(OrcaInputBg)
+                            .clickable(onClick = onDismiss),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = OrcaTextSecondary, modifier = Modifier.size(14.dp))
                     }
                 }
 
