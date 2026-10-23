@@ -5,7 +5,10 @@
 ## 📸 Screenshot Preview
 
 <p align="center">
-  <img src="docs/screenshots/dolphinslicer-preview.png" alt="DolphinSlicer Android Preview" width="380" />
+  <img src="docs/screenshots/dolphinslicer-prepare.png" alt="DolphinSlicer Prepare Tab" width="215" />
+  <img src="docs/screenshots/dolphinslicer-slicing.png" alt="DolphinSlicer Slicing Engine" width="215" />
+  <img src="docs/screenshots/dolphinslicer-preview.png" alt="DolphinSlicer 3D Toolpath Preview" width="215" />
+  <img src="docs/screenshots/dolphinslicer-device.png" alt="DolphinSlicer Device Klipper Web UI" width="215" />
 </p>
 
 ---
