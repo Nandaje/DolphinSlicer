@@ -86,8 +86,8 @@ class OrcaGlRenderer(
     private var toolpathRibbonVboId: Int = 0
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        // Exact OrcaSlicer neutral gray 3D viewport background (#38393B)
-        GLES30.glClearColor(0.22f, 0.224f, 0.231f, 1.0f)
+        // Dark studio viewport background (#0E0F12) matching mobile_3d_slicer_ui.html
+        GLES30.glClearColor(0.055f, 0.059f, 0.071f, 1.0f)
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
         GLES30.glDepthFunc(GLES30.GL_LEQUAL)
         GLES30.glEnable(GLES30.GL_BLEND)
@@ -206,16 +206,16 @@ class OrcaGlRenderer(
         val hw = bedW * 0.5f
         val hd = bedD * 0.5f
 
-        // Build plate neutral gray surface at Z = -0.08 matching real OrcaSlicer screenshot
+        // Textured PEI Build Plate dark charcoal surface (#181A20) at Z = -0.08
         val zPlate = -0.08f
-        val pr = 0.27f; val pg = 0.275f; val pb = 0.28f
+        val pr = 0.094f; val pg = 0.102f; val pb = 0.125f
         val quadFloats = floatArrayOf(
             -hw, -hd, zPlate, pr, pg, pb, 0f,
              hw, -hd, zPlate, pr, pg, pb, 0f,
-             hw,  hd, zPlate, pr + 0.02f, pg + 0.02f, pb + 0.02f, 0f,
+             hw,  hd, zPlate, pr + 0.018f, pg + 0.020f, pb + 0.024f, 0f,
             -hw, -hd, zPlate, pr, pg, pb, 0f,
-             hw,  hd, zPlate, pr + 0.02f, pg + 0.02f, pb + 0.02f, 0f,
-            -hw,  hd, zPlate, pr + 0.015f, pg + 0.015f, pb + 0.015f, 0f
+             hw,  hd, zPlate, pr + 0.018f, pg + 0.020f, pb + 0.024f, 0f,
+            -hw,  hd, zPlate, pr + 0.012f, pg + 0.014f, pb + 0.018f, 0f
         )
         plateQuadVboId = uploadFloatArrayToVbo(quadFloats, plateQuadVboId)
 
@@ -230,8 +230,11 @@ class OrcaGlRenderer(
         var idxX = 0
         while (x <= hw + 0.01f) {
             val isMajor = (idxX % 5 == 0)
-            val c = if (isMajor) 0.44f else 0.34f
-            addLine(x, -hd, 0f, x, hd, 0f, c, c, c)
+            if (isMajor) {
+                addLine(x, -hd, 0f, x, hd, 0f, 0.14f, 0.34f, 0.46f)
+            } else {
+                addLine(x, -hd, 0f, x, hd, 0f, 0.145f, 0.157f, 0.196f)
+            }
             x += step
             idxX++
         }
@@ -240,11 +243,20 @@ class OrcaGlRenderer(
         var idxY = 0
         while (y <= hd + 0.01f) {
             val isMajor = (idxY % 5 == 0)
-            val c = if (isMajor) 0.44f else 0.34f
-            addLine(-hw, y, 0f, hw, y, 0f, c, c, c)
+            if (isMajor) {
+                addLine(-hw, y, 0f, hw, y, 0f, 0.14f, 0.34f, 0.46f)
+            } else {
+                addLine(-hw, y, 0f, hw, y, 0f, 0.145f, 0.157f, 0.196f)
+            }
             y += step
             idxY++
         }
+
+        // Build Boundary Perimeter Line (Dolphin Blue/Teal accent)
+        addLine(-hw, -hd, 0.03f,  hw, -hd, 0.03f, 0.16f, 0.67f, 0.89f)
+        addLine( hw, -hd, 0.03f,  hw,  hd, 0.03f, 0.16f, 0.67f, 0.89f)
+        addLine( hw,  hd, 0.03f, -hw,  hd, 0.03f, 0.16f, 0.67f, 0.89f)
+        addLine(-hw,  hd, 0.03f, -hw, -hd, 0.03f, 0.16f, 0.67f, 0.89f)
 
         // Coordinate Axes at front-left corner (-hw, -hd)
         val axisLen = 35f
@@ -253,11 +265,11 @@ class OrcaGlRenderer(
         addLine(-hw, -hd, 0.05f, -hw, -hd, axisLen, 0.28f, 0.62f, 0.98f)         // Z Blue
 
         // Build volume wireframe box
-        val bc = 0.27f
-        addLine(-hw, -hd, maxH, hw, -hd, maxH, bc, bc, bc)
-        addLine(hw, -hd, maxH, hw, hd, maxH, bc, bc, bc)
-        addLine(hw, hd, maxH, -hw, hd, maxH, bc, bc, bc)
-        addLine(-hw, hd, maxH, -hw, -hd, maxH, bc, bc, bc)
+        val bc = 0.19f
+        addLine(-hw, -hd, maxH, hw, -hd, maxH, bc, bc, bc + 0.03f)
+        addLine(hw, -hd, maxH, hw, hd, maxH, bc, bc, bc + 0.03f)
+        addLine(hw, hd, maxH, -hw, hd, maxH, bc, bc, bc + 0.03f)
+        addLine(-hw, hd, maxH, -hw, -hd, maxH, bc, bc, bc + 0.03f)
 
         addLine(-hw, -hd, 0f, -hw, -hd, maxH, bc, bc, bc)
         addLine(hw, -hd, 0f, hw, -hd, maxH, bc, bc, bc)

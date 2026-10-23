@@ -59,7 +59,6 @@ enum class TransformGizmoMode(val title: String) {
 }
 
 enum class BuiltInPrimitiveType(val title: String) {
-    CALIBRATION_BOAT("Calibration Boat (3DBenchy-style)"),
     CALIBRATION_CUBE("Calibration Cube (20×20×20mm)"),
     OVERHANG_ARCH("Overhang & Bridge Test Arch"),
     CYLINDER("Cylinder (24×25mm)"),
@@ -141,10 +140,6 @@ class OrcaViewModel : ViewModel() {
     val uiState: StateFlow<OrcaUiState> = _uiState.asStateFlow()
 
     private var triggerCounter = 1
-
-    init {
-        addBuiltInPrimitive(BuiltInPrimitiveType.CALIBRATION_BOAT)
-    }
 
     fun selectWorkspaceTab(tab: WorkspaceTab) {
         _uiState.update { it.copy(activeWorkspaceTab = tab) }
@@ -384,7 +379,6 @@ class OrcaViewModel : ViewModel() {
     fun addBuiltInPrimitive(type: BuiltInPrimitiveType) {
         val mesh = when (type) {
             BuiltInPrimitiveType.CALIBRATION_CUBE -> ProceduralMeshes.createCalibrationCube(20f)
-            BuiltInPrimitiveType.CALIBRATION_BOAT -> ProceduralMeshes.createCalibrationBoat()
             BuiltInPrimitiveType.OVERHANG_ARCH -> ProceduralMeshes.createOverhangTestArch()
             BuiltInPrimitiveType.CYLINDER -> ProceduralMeshes.createCylinder(12f, 25f)
             BuiltInPrimitiveType.SPHERE -> ProceduralMeshes.createSphere(14f)

@@ -123,20 +123,20 @@ import com.orcaslicer.android.model.WipeTowerWallType
 import com.orcaslicer.android.model.ZHopType
 import java.util.Locale
 
-// DolphinSlicer Dark Palette with Dolphin Logo Azure Blue (#29ABE2) Accent
+// DolphinSlicer Dark Charcoal Palette (matching mobile_3d_slicer_ui.html) with Dolphin Logo Azure Blue (#29ABE2) Accent
 internal val OrcaTeal = Color(0xFF1D88B8)
 internal val OrcaTealBright = Color(0xFF29ABE2)
-internal val OrcaTopBarBg = Color(0xFF1F2022)
-internal val OrcaDarkBg = Color(0xFF262729)
-internal val OrcaPanelBg = Color(0xFF262729)
-internal val OrcaCardBg = Color(0xFF2B2C2E)
-internal val OrcaInputBg = Color(0xFF1E1F21)
-internal val OrcaElevatedBg = Color(0xFF323437)
-internal val OrcaBorder = Color(0xFF3E4044)
-internal val OrcaDivider = Color(0xFF35373A)
-internal val OrcaTextPrimary = Color(0xFFE6E8EA)
-internal val OrcaTextSecondary = Color(0xFF9AA0A6)
-internal val OrcaUnitText = Color(0xFF6E7276)
+internal val OrcaTopBarBg = Color(0xFF16171B)      // charcoal-900
+internal val OrcaDarkBg = Color(0xFF101114)        // charcoal-950
+internal val OrcaPanelBg = Color(0xFF16171B)       // charcoal-900
+internal val OrcaCardBg = Color(0xFF1C1E23)        // charcoal-850
+internal val OrcaInputBg = Color(0xFF22242A)       // charcoal-800
+internal val OrcaElevatedBg = Color(0xFF2A2D35)    // charcoal-750
+internal val OrcaBorder = Color(0xFF323640)        // charcoal-700
+internal val OrcaDivider = Color(0xFF2A2D35)       // charcoal-750
+internal val OrcaTextPrimary = Color(0xFFE2E8F0)   // slate-200
+internal val OrcaTextSecondary = Color(0xFF94A3B8) // slate-400
+internal val OrcaUnitText = Color(0xFF64748B)      // slate-500
 
 /**
  * 1:1 OrcaSlicer Section Header with Left Icon, Bold Title, and Horizontal Divider Line extending right.
@@ -3427,7 +3427,7 @@ fun FullProcessSettingsCard(
 }
 
 @Composable
-private fun PrinterProfileBrowserModal(
+internal fun PrinterProfileBrowserModal(
     state: OrcaUiState,
     onSelectPrinter: (com.orcaslicer.android.model.PrinterProfile) -> Unit,
     onSyncServerClick: () -> Unit,
@@ -3572,7 +3572,7 @@ private fun PrinterProfileBrowserModal(
 }
 
 @Composable
-private fun FilamentProfileBrowserModal(
+internal fun FilamentProfileBrowserModal(
     state: OrcaUiState,
     onSelectFilament: (com.orcaslicer.android.model.FilamentProfile) -> Unit,
     onSyncServerClick: () -> Unit,
