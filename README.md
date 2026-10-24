@@ -2,6 +2,9 @@
 
 **DolphinSlicer** is a native Android 3D printing slicer inspired by [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer), featuring hardware-accelerated **OpenGL ES 3.0** 3D rendering, a **1:1 OrcaSlicer desktop UI layout** with adaptive **Portrait & Landscape** support, live official OrcaSlicer server profile synchronization, and a multi-threaded two-pass slicing engine.
 
+> 🐬 **Why "DolphinSlicer"?**
+> Because an **Orca** is big (actually the largest member of the dolphin family, built for desktop PCs), and a **Dolphin** is its smaller, agile cousin that fits right in your pocket on Android!
+
 ## 📸 Screenshot Preview
 
 <p align="center">
@@ -47,10 +50,16 @@ The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
 
 ---
 
-## 👥 Contributors
+## 👥 Contributors & Credits
 
+### Contributors
 - **[@Nandaje](https://github.com/Nandaje)** — Creator & Lead Maintainer
 - **Google Gemini 4 Antigravity** *(Google DeepMind)* — AI Engineering & Architecture Contributor
+
+### Special Credits & Upstream Inspiration
+- **[OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer)** — UI/UX workflow, calibration tools, scarf seam concepts, and official printer & filament profile catalogs.
+- **[PrusaSlicer](https://github.com/prusa3d/PrusaSlicer)** — Foundational slicing architecture, perimeter/infill path generation principles, and 3MF ecosystem standards.
+- **[SuperSlicer](https://github.com/supermerill/SuperSlicer)** — Advanced print calibration, fine-grained process parameter tuning, and community slicer innovations.
 
 ---
 

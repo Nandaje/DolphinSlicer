@@ -1087,6 +1087,20 @@ private fun OrcaMobileReferenceHeader(
                                 color = OrcaTextSecondary
                             )
                         }
+                        HorizontalDivider(color = OrcaBorder)
+                        Column {
+                            Text(
+                                text = "Credits: OrcaSlicer • PrusaSlicer • SuperSlicer",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = OrcaTealBright
+                            )
+                            Text(
+                                text = "Why DolphinSlicer? Because Orca is big (for PC) and Dolphin is small (for Android)! 🐬",
+                                fontSize = 10.5.sp,
+                                color = OrcaTextSecondary
+                            )
+                        }
                     }
 
                     // Support & Donation Section (buymeacoffee.com/nandaje)
