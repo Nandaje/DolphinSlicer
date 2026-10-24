@@ -1100,6 +1100,12 @@ private fun OrcaMobileReferenceHeader(
                                 fontSize = 10.5.sp,
                                 color = OrcaTextSecondary
                             )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "Disclosure: Vibe-coded with Gemini 4 Argon using the OrcaSlicer repo as reference and remade in Kotlin. Directed, feature-guided, and tested on phone by @Nandaje.",
+                                fontSize = 10.sp,
+                                color = OrcaTextSecondary
+                            )
                         }
                     }
 

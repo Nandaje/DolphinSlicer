@@ -4,6 +4,9 @@
 
 > 🐬 **Why "DolphinSlicer"?**
 > Because an **Orca** is big (actually the largest member of the dolphin family, built for desktop PCs), and a **Dolphin** is its smaller, agile cousin that fits right in your pocket on Android!
+>
+> 🤖 **Vibe-Coding Disclosure:**
+> This project was vibe-coded using **Google Gemini 4 Argon (Antigravity)** using the official [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer) repository as a reference and remaking it from scratch into native Android **Kotlin**. As the human creator ([@Nandaje](https://github.com/Nandaje)), I gave the direction on what to build, requested features and UI refinements, and tested every build directly on my phone.
 
 ## 📸 Screenshot Preview
 
