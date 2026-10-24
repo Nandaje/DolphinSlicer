@@ -510,7 +510,7 @@ private fun OrcaMobileReferenceHeader(
                                 .padding(horizontal = 3.dp, vertical = 0.5.dp)
                         ) {
                             Text(
-                                text = "v1.2.1",
+                                text = "v1.2.4",
                                 fontSize = 8.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = OrcaTealBright,

@@ -40,7 +40,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.LinearScale
-import androidx.compose.material.icons.filled.ListAlt
+import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Print
@@ -1158,7 +1158,7 @@ fun FullPresetSelectorsCard(
                     Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color.White))
                 }
                 Icon(
-                    imageVector = Icons.Default.ListAlt,
+                    imageVector = Icons.AutoMirrored.Filled.ListAlt,
                     contentDescription = "Compare Presets",
                     tint = OrcaTextSecondary,
                     modifier = Modifier.size(16.dp)
@@ -3418,7 +3418,7 @@ fun FullProcessSettingsCard(
                     onValueChange = { s -> viewModel.updateProcess { it.copy(postProcessingScripts = s) } }
                 )
 
-                OrcaSectionGroupHeader(Icons.Default.ListAlt, "Notes")
+                OrcaSectionGroupHeader(Icons.AutoMirrored.Filled.ListAlt, "Notes")
                 OrcaParamMultiLineTextRow(
                     value = proc.notes,
                     placeholder = "Process profile notes...",

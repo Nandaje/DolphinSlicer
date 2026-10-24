@@ -1,5 +1,6 @@
 package com.orcaslicer.android.slicer
 
+import com.orcaslicer.android.model.BoundingBox
 import com.orcaslicer.android.model.BrimType
 import com.orcaslicer.android.model.CombingMode
 import com.orcaslicer.android.model.FilamentProfile
@@ -9,6 +10,7 @@ import com.orcaslicer.android.model.IroningType
 import com.orcaslicer.android.model.PrintStatistics
 import com.orcaslicer.android.model.PrinterProfile
 import com.orcaslicer.android.model.ProcessProfile
+import com.orcaslicer.android.model.ScarfSeamType
 import com.orcaslicer.android.model.SceneObject
 import com.orcaslicer.android.model.SeamPosition
 import com.orcaslicer.android.model.SliceLayer
@@ -23,6 +25,7 @@ import com.orcaslicer.android.model.ToolpathType
 import com.orcaslicer.android.model.Triangle
 import com.orcaslicer.android.model.Vec2
 import com.orcaslicer.android.model.Vec3
+import com.orcaslicer.android.model.WallsPrintingOrder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -144,12 +147,17 @@ object SlicingEngine {
 
             onProgress(0.04f, "Transforming meshes to build plate...")
             val allTriangles = ArrayList<Triangle>()
+            val supportTriangles = ArrayList<Triangle>()
             var maxZ = 0f
             for (obj in visibleObjects) {
                 ensureActive()
                 val worldTris = obj.worldTriangles()
+                val objSupportEnabled = obj.supportEnabledOverride ?: process.enableSupport
                 for (t in worldTris) {
                     allTriangles.add(t)
+                    if (objSupportEnabled) {
+                        supportTriangles.add(t)
+                    }
                     maxZ = max(maxZ, max(t.v0.z, max(t.v1.z, t.v2.z)))
                 }
             }
@@ -160,8 +168,17 @@ object SlicingEngine {
                 )
             }
 
-            val layerHeight = process.layerHeightMm.coerceIn(0.05f, 0.60f)
-            val firstLayerHeight = process.initialLayerHeightMm.coerceIn(0.08f, 0.60f)
+            val effectiveProcess = process.copy(
+                wallLoops = visibleObjects.mapNotNull { it.wallLoopsOverride }.firstOrNull() ?: process.wallLoops,
+                sparseInfillDensityPercent = visibleObjects.mapNotNull { it.infillDensityOverride }.firstOrNull() ?: process.sparseInfillDensityPercent,
+                enableSupport = supportTriangles.isNotEmpty()
+            )
+            val objectWallOverrides = visibleObjects.mapNotNull { obj ->
+                obj.wallLoopsOverride?.let { loops -> obj.worldBoundingBox() to loops.coerceIn(1, 15) }
+            }
+
+            val layerHeight = effectiveProcess.layerHeightMm.coerceIn(0.05f, 0.60f)
+            val firstLayerHeight = effectiveProcess.initialLayerHeightMm.coerceIn(0.08f, 0.60f)
 
             // Compute exact layer count where every layer's mid-plane sliceZ is strictly inside [0, maxZ)
             val additionalLayers = if (maxZ > firstLayerHeight) {
@@ -236,7 +253,8 @@ object SlicingEngine {
                                 nominalZ = nominalZ,
                                 layerHeight = lh,
                                 triangles = trianglesByLayer[layerIdx],
-                                process = process
+                                process = effectiveProcess,
+                                objectWallOverrides = objectWallOverrides
                             )
                         )
                         val done = completedPass1.incrementAndGet()
@@ -252,13 +270,13 @@ object SlicingEngine {
             val allGeometries = geometryChunks.awaitAll().flatten().sortedBy { it.layerIdx }
 
             // Compute OrcaSlicer Normal or Tree (Organic) Support Plans across all layers if support is enabled
-            val layerSupportPlans: List<LayerSupportPlan> = if (process.enableSupport) {
+            val layerSupportPlans: List<LayerSupportPlan> = if (effectiveProcess.enableSupport && supportTriangles.isNotEmpty()) {
                 ensureActive()
-                onProgress(0.39f, "Generating OrcaSlicer ${process.supportType.label} structures...")
-                if (process.supportType == SupportType.TREE_ORGANIC || process.supportType == SupportType.TREE_MANUAL) {
-                    computeTreeSupportPlans(allTriangles, allGeometries, process)
+                onProgress(0.39f, "Generating OrcaSlicer ${effectiveProcess.supportType.label} structures...")
+                if (effectiveProcess.supportType == SupportType.TREE_ORGANIC || effectiveProcess.supportType == SupportType.TREE_MANUAL) {
+                    computeTreeSupportPlans(supportTriangles, allGeometries, effectiveProcess)
                 } else {
-                    computeNormalSupportPlans(allTriangles, allGeometries, process)
+                    computeNormalSupportPlans(supportTriangles, allGeometries, effectiveProcess)
                 }
             } else {
                 List(totalLayers) { LayerSupportPlan.EMPTY }
@@ -281,7 +299,7 @@ object SlicingEngine {
                                 allGeometries = allGeometries,
                                 supportPlan = layerSupportPlans.getOrElse(layerIdx) { LayerSupportPlan.EMPTY },
                                 filament = filament,
-                                process = process
+                                process = effectiveProcess
                             )
                         )
                         val done = completedPass2.incrementAndGet()
@@ -302,7 +320,7 @@ object SlicingEngine {
                 layers = slicedLayers,
                 printer = printer,
                 filament = filament,
-                process = process
+                process = effectiveProcess
             )
 
             ensureActive()
@@ -324,7 +342,8 @@ object SlicingEngine {
         nominalZ: Float,
         layerHeight: Float,
         triangles: List<Triangle>,
-        process: ProcessProfile
+        process: ProcessProfile,
+        objectWallOverrides: List<Pair<BoundingBox, Int>> = emptyList()
     ): LayerContourGeometry {
         val rawSegments = intersectTrianglesAtZ(triangles, sliceZ)
         val rawContours = chainSegmentsIntoPolygons(rawSegments)
@@ -335,6 +354,8 @@ object SlicingEngine {
         } else {
             0f
         }
+        val xyContourComp = process.xyContourCompensationMm.coerceIn(-2.0f, 2.0f)
+        val xyHoleComp = process.xyHoleCompensationMm.coerceIn(-2.0f, 2.0f)
 
         val outerWallWidth = if (isInitialLayer) {
             process.initialLayerLineWidthMm.coerceIn(0.25f, 1.0f)
@@ -343,10 +364,10 @@ object SlicingEngine {
         }
         val innerWallWidth = process.innerWallLineWidthMm.coerceIn(0.25f, 1.0f)
 
-        val wallCount = when {
+        val defaultWallCount = when {
             process.spiralVaseMode -> 1
             isInitialLayer && process.onlyOneWallFirstLayer -> 1
-            else -> process.wallLoops.coerceIn(1, 12)
+            else -> process.wallLoops.coerceIn(1, 15)
         }
 
         val outerContours = ArrayList<List<Vec2>>()
@@ -362,6 +383,16 @@ object SlicingEngine {
             val myArea = areas[i]
             val samplePt = rawContour[0]
 
+            val wallCount = if (!process.spiralVaseMode && !(isInitialLayer && process.onlyOneWallFirstLayer) && objectWallOverrides.isNotEmpty()) {
+                objectWallOverrides.firstOrNull { (box, _) ->
+                    samplePt.x in (box.min.x - 1f)..(box.max.x + 1f) &&
+                        samplePt.y in (box.min.y - 1f)..(box.max.y + 1f) &&
+                        sliceZ in (box.min.z - 1f)..(box.max.z + 1f)
+                }?.second ?: defaultWallCount
+            } else {
+                defaultWallCount
+            }
+
             // Count how many larger contours on this layer enclose `rawContour`
             var nestingDepth = 0
             for (j in validContours.indices) {
@@ -374,11 +405,12 @@ object SlicingEngine {
             val isHoleContour = (nestingDepth % 2) == 1
 
             if (!isHoleContour) {
-                // OUTER SOLID BOUNDARY: offset INWARD into the solid interior
-                val baseContour = if (elephantFootInset > 0.01f) {
-                    offsetPolygonInward(rawContour, elephantFootInset).ifEmpty { rawContour }
-                } else {
-                    rawContour
+                // OUTER SOLID BOUNDARY: apply elephant foot inset and X-Y contour compensation
+                val netOuterInset = elephantFootInset - xyContourComp
+                val baseContour = when {
+                    netOuterInset > 0.005f -> offsetPolygonInward(rawContour, netOuterInset).ifEmpty { rawContour }
+                    netOuterInset < -0.005f -> offsetPolygonOutward(rawContour, -netOuterInset).ifEmpty { rawContour }
+                    else -> rawContour
                 }
                 outerContours.add(baseContour)
 
@@ -407,11 +439,12 @@ object SlicingEngine {
                     }
                 }
             } else if (!process.spiralVaseMode) {
-                // INNER HOLE BOUNDARY: offset OUTWARD into the solid material surrounding the hole!
-                val baseHole = if (elephantFootInset > 0.01f) {
-                    offsetPolygonOutward(rawContour, elephantFootInset).ifEmpty { rawContour }
-                } else {
-                    rawContour
+                // INNER HOLE BOUNDARY: offset OUTWARD into the solid material surrounding the hole (plus X-Y hole compensation)
+                val netHoleOutset = elephantFootInset + xyHoleComp
+                val baseHole = when {
+                    netHoleOutset > 0.005f -> offsetPolygonOutward(rawContour, netHoleOutset).ifEmpty { rawContour }
+                    netHoleOutset < -0.005f -> offsetPolygonInward(rawContour, -netHoleOutset).ifEmpty { rawContour }
+                    else -> rawContour
                 }
                 outerContours.add(baseHole)
 
@@ -573,19 +606,45 @@ object SlicingEngine {
             speedMmS: Float,
             lineWidthMm: Float,
             closed: Boolean,
-            flowMultiplier: Float = 1.0f
+            flowMultiplier: Float = 1.0f,
+            wallLoopOrderOffset: Int = 0
         ) {
             if (points.size < 2) return
             val orderedPts = if (closed && points.size >= 3 && (type == ToolpathType.OUTER_WALL || type == ToolpathType.INNER_WALL)) {
-                val refPt = if (process.seamPosition == SeamPosition.NEAREST && lastNozzlePos != null) {
-                    Vec2(lastNozzlePos!!.x, lastNozzlePos!!.y)
-                } else {
-                    Vec2(process.layerStartXMm, process.layerStartYMm)
+                val baseAligned = when (process.seamPosition) {
+                    SeamPosition.NEAREST -> {
+                        val refPt = lastNozzlePos?.let { Vec2(it.x, it.y) } ?: Vec2(process.layerStartXMm, process.layerStartYMm)
+                        alignClosedPolygonStart(points, refPt)
+                    }
+                    SeamPosition.BACK -> {
+                        val b = computeContoursBounds(listOf(points))
+                        val refPt = Vec2((b.first.x + b.second.x) * 0.5f, b.second.y + 100f)
+                        alignClosedPolygonStart(points, refPt)
+                    }
+                    SeamPosition.RANDOM -> {
+                        val shift = (((layerIdx + 1) * 1103515245 + 12345) ushr 1) % points.size
+                        if (shift == 0) points else (points.subList(shift, points.size) + points.subList(0, shift))
+                    }
+                    SeamPosition.ALIGNED -> {
+                        val refPt = Vec2(process.layerStartXMm, process.layerStartYMm)
+                        alignClosedPolygonStart(points, refPt)
+                    }
                 }
-                alignClosedPolygonStart(points, refPt)
+                if (process.staggeredInnerSeams && type == ToolpathType.INNER_WALL && wallLoopOrderOffset > 0 && baseAligned.size >= 4) {
+                    val shift = wallLoopOrderOffset.coerceAtLeast(1) % baseAligned.size
+                    baseAligned.subList(shift, baseAligned.size) + baseAligned.subList(0, shift)
+                } else {
+                    baseAligned
+                }
             } else {
                 points
             }
+
+            val useScarf = closed && orderedPts.size >= 3 && (
+                (type == ToolpathType.OUTER_WALL && process.scarfJointSeam != ScarfSeamType.NONE) ||
+                    (type == ToolpathType.INNER_WALL && process.scarfJointSeam == ScarfSeamType.CONTOUR_AND_HOLE)
+                )
+            val scarfSpeedFactor = if (useScarf) (process.wipeSpeedPercent.coerceIn(20, 150) / 100f) else 1.0f
 
             val extrusionPerMm = ((lineWidthMm * layerHeight) / filamentArea) * filament.flowRatio * flowMultiplier
             val first3D = Vec3(orderedPts[0].x, orderedPts[0].y, nominalZ)
@@ -644,13 +703,16 @@ object SlicingEngine {
                 val p1 = Vec3(orderedPts[i + 1].x, orderedPts[i + 1].y, nominalZ)
                 val len = p0.distanceTo(p1)
                 if (len > 0.015f) {
+                    val isScarfLeadIn = useScarf && i == 0
+                    val segFlow = if (isScarfLeadIn) 0.72f else 1.0f
+                    val segSpeed = if (isScarfLeadIn) (speedMmS * speedScale * scarfSpeedFactor) else (speedMmS * speedScale)
                     segments.add(
                         ToolpathSegment(
                             start = p0,
                             end = p1,
                             type = type,
-                            extrusionMm = len * extrusionPerMm,
-                            speedMmS = (speedMmS * speedScale).coerceAtLeast(8f),
+                            extrusionMm = len * extrusionPerMm * segFlow,
+                            speedMmS = segSpeed.coerceAtLeast(8f),
                             layerIndex = layerIdx,
                             widthMm = lineWidthMm
                         )
@@ -664,13 +726,15 @@ object SlicingEngine {
                 val pFirst = Vec3(orderedPts.first().x, orderedPts.first().y, nominalZ)
                 val len = pLast.distanceTo(pFirst)
                 if (len > 0.015f) {
+                    val segFlow = if (useScarf) 0.72f else 1.0f
+                    val segSpeed = if (useScarf) (speedMmS * speedScale * scarfSpeedFactor) else (speedMmS * speedScale)
                     segments.add(
                         ToolpathSegment(
                             start = pLast,
                             end = pFirst,
                             type = type,
-                            extrusionMm = len * extrusionPerMm,
-                            speedMmS = (speedMmS * speedScale).coerceAtLeast(8f),
+                            extrusionMm = len * extrusionPerMm * segFlow,
+                            speedMmS = segSpeed.coerceAtLeast(8f),
                             layerIndex = layerIdx,
                             widthMm = lineWidthMm
                         )
@@ -680,28 +744,44 @@ object SlicingEngine {
             }
         }
 
-        // 1. Skirt / Brim on Layer 0
-        if (isInitialLayer && process.brimType != BrimType.NONE && contours.isNotEmpty()) {
+        // 1. Skirt / Brim
+        val shouldEmitSkirt = contours.isNotEmpty() && (
+            (process.skirtLoops > 0 && layerIdx < process.skirtHeightLayers.coerceIn(1, 50)) ||
+                (isInitialLayer && process.brimType == BrimType.SKIRT)
+            )
+        if (shouldEmitSkirt) {
             val bounds = computeContoursBounds(contours)
-            val loops = if (process.brimType == BrimType.SKIRT) {
-                process.skirtLoops.coerceIn(1, 5)
-            } else {
-                max(2, (process.brimWidthMm / outerWallWidth).toInt())
+            val loops = process.skirtLoops.coerceIn(1, 10)
+            val startGap = process.skirtDistanceMm.coerceAtLeast(1.5f)
+            val skirtSpeed = if (isInitialLayer) process.initialLayerSpeedMmS else process.skirtSpeedMmS
+            for (sIdx in 0 until loops) {
+                val pad = startGap + sIdx * outerWallWidth * 0.95f
+                val loopPts = if (contours.size == 1) {
+                    offsetPolygonOutward(contours[0], pad).ifEmpty {
+                        createRoundedRectLoop(bounds.first.x - pad, bounds.first.y - pad, bounds.second.x + pad, bounds.second.y + pad)
+                    }
+                } else {
+                    createRoundedRectLoop(bounds.first.x - pad, bounds.first.y - pad, bounds.second.x + pad, bounds.second.y + pad)
+                }
+                appendPath(loopPts, ToolpathType.SKIRT_BRIM, skirtSpeed, outerWallWidth, closed = true)
             }
-            val startGap = if (process.brimType == BrimType.SKIRT) {
-                process.skirtDistanceMm.coerceAtLeast(1.5f)
-            } else {
-                process.brimObjectGapMm.coerceAtLeast(outerWallWidth * 0.4f)
-            }
+        }
+
+        if (isInitialLayer && process.brimType != BrimType.NONE && process.brimType != BrimType.SKIRT && contours.isNotEmpty()) {
+            val bounds = computeContoursBounds(contours)
+            val loops = max(2, (process.brimWidthMm / outerWallWidth).toInt())
+            val startGap = process.brimObjectGapMm.coerceAtLeast(outerWallWidth * 0.4f)
+            val brimFlow = process.brimFlowRatio.coerceIn(0.5f, 1.5f)
             for (bIdx in 0 until loops) {
                 val pad = startGap + bIdx * outerWallWidth * 0.95f
-                val loopPts = createRoundedRectLoop(
-                    minX = bounds.first.x - pad,
-                    minY = bounds.first.y - pad,
-                    maxX = bounds.second.x + pad,
-                    maxY = bounds.second.y + pad
-                )
-                appendPath(loopPts, ToolpathType.SKIRT_BRIM, process.initialLayerSpeedMmS, outerWallWidth, closed = true)
+                val loopPts = if (contours.size == 1) {
+                    offsetPolygonOutward(contours[0], pad).ifEmpty {
+                        createRoundedRectLoop(bounds.first.x - pad, bounds.first.y - pad, bounds.second.x + pad, bounds.second.y + pad)
+                    }
+                } else {
+                    createRoundedRectLoop(bounds.first.x - pad, bounds.first.y - pad, bounds.second.x + pad, bounds.second.y + pad)
+                }
+                appendPath(loopPts, ToolpathType.SKIRT_BRIM, process.initialLayerSpeedMmS, outerWallWidth, closed = true, flowMultiplier = brimFlow)
             }
         }
 
@@ -745,46 +825,86 @@ object SlicingEngine {
             }
         }
 
-        // 3. Perimeters (Outer Wall + Inner Walls)
-        for (walls in geom.wallLoopsPerContour) {
-            if (walls.isEmpty()) continue
-            val outerWall = walls[0]
-            val decoratedOuter = if (process.fuzzySkinType != FuzzySkinType.NONE && !isInitialLayer) {
-                applyFuzzySkinToPolygon(outerWall, layerIdx, process.fuzzySkinPointDistMm, process.fuzzySkinThicknessMm)
-            } else {
-                outerWall
-            }
-            appendPath(
-                points = decoratedOuter,
-                type = ToolpathType.OUTER_WALL,
-                speedMmS = if (isInitialLayer) process.initialLayerSpeedMmS else process.outerWallSpeedMmS,
-                lineWidthMm = outerWallWidth,
-                closed = true
-            )
+        // 3. Perimeters (Outer Wall + Inner Walls honoring wallsPrintingOrder)
+        fun emitLayerPerimeters() {
+            for (walls in geom.wallLoopsPerContour) {
+                if (walls.isEmpty()) continue
+                val outerWall = walls[0]
+                val decoratedOuter = if (process.fuzzySkinType != FuzzySkinType.NONE && !isInitialLayer) {
+                    applyFuzzySkinToPolygon(outerWall, layerIdx, process.fuzzySkinPointDistMm, process.fuzzySkinThicknessMm)
+                } else {
+                    outerWall
+                }
 
-            for (w in 1 until walls.size) {
-                appendPath(
-                    points = walls[w],
-                    type = ToolpathType.INNER_WALL,
-                    speedMmS = if (isInitialLayer) process.initialLayerSpeedMmS else process.innerWallSpeedMmS,
-                    lineWidthMm = innerWallWidth,
-                    closed = true
-                )
+                fun emitOuter() {
+                    appendPath(
+                        points = decoratedOuter,
+                        type = ToolpathType.OUTER_WALL,
+                        speedMmS = if (isInitialLayer) process.initialLayerSpeedMmS else process.outerWallSpeedMmS,
+                        lineWidthMm = outerWallWidth,
+                        closed = true
+                    )
+                }
+
+                fun emitInner(wIdx: Int) {
+                    appendPath(
+                        points = walls[wIdx],
+                        type = ToolpathType.INNER_WALL,
+                        speedMmS = if (isInitialLayer) process.initialLayerSpeedMmS else process.innerWallSpeedMmS,
+                        lineWidthMm = innerWallWidth,
+                        closed = true,
+                        wallLoopOrderOffset = wIdx
+                    )
+                }
+
+                when (process.wallsPrintingOrder) {
+                    WallsPrintingOrder.INNER_OUTER -> {
+                        for (w in (walls.size - 1) downTo 1) {
+                            emitInner(w)
+                        }
+                        emitOuter()
+                    }
+                    WallsPrintingOrder.OUTER_INNER -> {
+                        emitOuter()
+                        for (w in 1 until walls.size) {
+                            emitInner(w)
+                        }
+                    }
+                    WallsPrintingOrder.INNER_OUTER_INNER -> {
+                        if (walls.size >= 3) {
+                            for (w in (walls.size - 1) downTo 2) {
+                                emitInner(w)
+                            }
+                            emitOuter()
+                            emitInner(1)
+                        } else {
+                            for (w in (walls.size - 1) downTo 1) {
+                                emitInner(w)
+                            }
+                            emitOuter()
+                        }
+                    }
+                }
             }
         }
 
         // 4. Multi-Layer Region-Aware Bottom Surface, Top Surface, Internal Solid Infill, and Sparse Infill
-        val infillPolygons = geom.infillPolygons
-        if (!process.spiralVaseMode && infillPolygons.isNotEmpty()) {
-            val bottomShellCount = process.bottomShellLayers.coerceIn(0, 50)
-            val topShellCount = process.topShellLayers.coerceIn(0, 50)
+        fun emitLayerInfillAndSurfaces() {
+            val infillPolygons = geom.infillPolygons
+            if (!process.spiralVaseMode && infillPolygons.isNotEmpty()) {
+                val bottomShellCount = process.bottomShellLayers.coerceIn(0, 50)
+                val topShellCount = process.topShellLayers.coerceIn(0, 50)
 
-            val baseDir = process.infillDirectionDeg.toFloat()
-            val solidAngleDeg = if (layerIdx % 2 == 0) baseDir else baseDir + 90f
+                val baseDir = if (process.solidInfillDirectionDeg != 45) {
+                    process.solidInfillDirectionDeg.toFloat()
+                } else {
+                    process.infillDirectionDeg.toFloat()
+                }
+                val solidAngleDeg = if (layerIdx % 2 == 0) baseDir else baseDir + 90f
 
-            // Dense spacing (0.94x line width) guarantees adjacent skin extrusions fuse with zero gaps
-            val skinLineWidth = if (isInitialLayer) solidInfillWidth else topSurfaceWidth
-            val solidSpacing = (skinLineWidth * 0.94f).coerceAtLeast(0.22f)
+                // Dense spacing (0.94x line width) guarantees adjacent skin extrusions fuse with zero gaps
+                val skinLineWidth = if (isInitialLayer) solidInfillWidth else topSurfaceWidth
+                val solidSpacing = (skinLineWidth * 0.94f).coerceAtLeast(0.22f)
 
             // Special handling if user chose Concentric pattern on pure bottom or pure top layer
             val isPureBottomConcentric = isInitialLayer && bottomShellCount > 0 &&
@@ -1003,7 +1123,8 @@ object SlicingEngine {
                     nominalZ = nominalZ,
                     densityPercent = process.sparseInfillDensityPercent,
                     pattern = process.sparseInfillPattern,
-                    lineWidth = sparseInfillWidth
+                    lineWidth = sparseInfillWidth,
+                    infillDirectionDeg = process.infillDirectionDeg
                 )
                 for (line in sparseLines) {
                     appendPath(
@@ -1015,6 +1136,15 @@ object SlicingEngine {
                     )
                 }
             }
+            }
+        }
+
+        if (process.printInfillFirst && !process.spiralVaseMode) {
+            emitLayerInfillAndSurfaces()
+            emitLayerPerimeters()
+        } else {
+            emitLayerPerimeters()
+            emitLayerInfillAndSurfaces()
         }
 
         return SliceLayer(
@@ -1050,7 +1180,8 @@ object SlicingEngine {
         nominalZ: Float,
         densityPercent: Int,
         pattern: InfillPattern,
-        lineWidth: Float
+        lineWidth: Float,
+        infillDirectionDeg: Int = 45
     ): List<List<Vec2>> {
         if (densityPercent <= 0 || infillPolygons.isEmpty()) return emptyList()
 
@@ -1075,15 +1206,16 @@ object SlicingEngine {
             (lineWidth * 100f / densityPercent.coerceIn(5, 95)).coerceIn(lineWidth, 16f)
         }
 
+        val dirOffset = (infillDirectionDeg - 45).toFloat()
         val anglesDeg = when (pattern) {
-            InfillPattern.GRID -> listOf(45f, -45f)
-            InfillPattern.ADAPTIVE_CUBIC -> listOf(0f, 60f, 120f)
-            InfillPattern.TRIANGLES, InfillPattern.TRI_HEXAGON -> listOf(0f, 60f, 120f)
-            InfillPattern.GYROID -> listOf(if (layerIdx % 2 == 0) 0f else 90f)
-            InfillPattern.HONEYCOMB -> listOf(if (layerIdx % 2 == 0) 30f else -30f)
-            InfillPattern.CROSS_HATCH -> listOf(if (layerIdx % 2 == 0) 22.5f else -67.5f)
-            InfillPattern.LIGHTNING -> listOf(90f)
-            else -> listOf(if (layerIdx % 2 == 0) 45f else -45f)
+            InfillPattern.GRID -> listOf(45f + dirOffset, -45f + dirOffset)
+            InfillPattern.ADAPTIVE_CUBIC -> listOf(0f + dirOffset, 60f + dirOffset, 120f + dirOffset)
+            InfillPattern.TRIANGLES, InfillPattern.TRI_HEXAGON -> listOf(0f + dirOffset, 60f + dirOffset, 120f + dirOffset)
+            InfillPattern.GYROID -> listOf((if (layerIdx % 2 == 0) 0f else 90f) + dirOffset)
+            InfillPattern.HONEYCOMB -> listOf((if (layerIdx % 2 == 0) 30f else -30f) + dirOffset)
+            InfillPattern.CROSS_HATCH -> listOf((if (layerIdx % 2 == 0) 22.5f else -67.5f) + dirOffset)
+            InfillPattern.LIGHTNING -> listOf(90f + dirOffset)
+            else -> listOf((if (layerIdx % 2 == 0) 45f else -45f) + dirOffset)
         }
 
         val effectiveSpacing = if (anglesDeg.size > 1 && densityPercent < 99) {

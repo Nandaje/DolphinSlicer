@@ -370,7 +370,11 @@ object ModelImporter {
         var curX = 0f
         var curY = 0f
         var curZ = 0.2f
+        var curE = 0f
         var curF = 3000f
+        var relativeXYZ = false
+        var relativeExtrusion = true
+        var explicitExtrusionMode: Boolean? = null
         var bedCenterX = 128f
         var bedCenterY = 128f
         var seenFirstLayerChange = false
@@ -382,6 +386,7 @@ object ModelImporter {
         var line: String? = reader.readLine()
         while (line != null) {
             val trimmed = line.trim()
+            val codeOnly = trimmed.substringBefore(';').trim()
             if (trimmed.startsWith("; bed_center_x =", ignoreCase = true)) {
                 trimmed.substringAfter("=").trim().toFloatOrNull()?.let { bedCenterX = it }
             } else if (trimmed.startsWith("; bed_center_y =", ignoreCase = true)) {
@@ -412,25 +417,61 @@ object ModelImporter {
                     )
                     currentLayerSegments = ArrayList()
                 }
-            } else if (trimmed.startsWith("G0 ") || trimmed.startsWith("G1 ")) {
-                val codePart = trimmed.substringBefore(';').trim()
-                val tokens = codePart.split(Regex("\\s+"))
+            } else if (codeOnly.equals("M82", ignoreCase = true) || codeOnly.startsWith("M82 ", ignoreCase = true)) {
+                relativeExtrusion = false
+                explicitExtrusionMode = false
+            } else if (codeOnly.equals("M83", ignoreCase = true) || codeOnly.startsWith("M83 ", ignoreCase = true)) {
+                relativeExtrusion = true
+                explicitExtrusionMode = true
+            } else if (codeOnly.equals("G90", ignoreCase = true) || codeOnly.startsWith("G90 ", ignoreCase = true)) {
+                relativeXYZ = false
+                if (explicitExtrusionMode == null) relativeExtrusion = false
+            } else if (codeOnly.equals("G91", ignoreCase = true) || codeOnly.startsWith("G91 ", ignoreCase = true)) {
+                relativeXYZ = true
+                if (explicitExtrusionMode == null) relativeExtrusion = true
+            } else if (codeOnly.equals("G92", ignoreCase = true) || codeOnly.startsWith("G92 ", ignoreCase = true)) {
+                val tokens = codeOnly.split(Regex("\\s+"))
+                for (i in 1 until tokens.size) {
+                    val tok = tokens[i]
+                    if (tok.length < 2) continue
+                    val value = tok.substring(1).toFloatOrNull() ?: continue
+                    when (tok[0].uppercaseChar()) {
+                        'X' -> curX = value
+                        'Y' -> curY = value
+                        'Z' -> curZ = value
+                        'E' -> {
+                            curE = value
+                            if (explicitExtrusionMode == null) relativeExtrusion = false
+                        }
+                    }
+                }
+            } else if (codeOnly.startsWith("G0 ", ignoreCase = true) || codeOnly.startsWith("G1 ", ignoreCase = true)) {
+                val tokens = codeOnly.split(Regex("\\s+"))
                 var nextX = curX
                 var nextY = curY
                 var nextZ = curZ
-                var deltaE = 0f
+                var eParam: Float? = null
 
                 for (i in 1 until tokens.size) {
                     val tok = tokens[i]
                     if (tok.length < 2) continue
                     val value = tok.substring(1).toFloatOrNull() ?: continue
                     when (tok[0].uppercaseChar()) {
-                        'X' -> nextX = value
-                        'Y' -> nextY = value
-                        'Z' -> nextZ = value
-                        'E' -> deltaE = value
+                        'X' -> nextX = if (relativeXYZ) curX + value else value
+                        'Y' -> nextY = if (relativeXYZ) curY + value else value
+                        'Z' -> nextZ = if (relativeXYZ) curZ + value else value
+                        'E' -> eParam = value
                         'F' -> if (value > 1f) curF = value
                     }
+                }
+
+                val deltaE = if (eParam != null) {
+                    if (relativeExtrusion) eParam else (eParam - curE)
+                } else {
+                    0f
+                }
+                if (eParam != null) {
+                    curE = if (relativeExtrusion) (curE + eParam) else eParam
                 }
 
                 if (hasLayerChangeMarkers && !seenFirstLayerChange) {
@@ -443,7 +484,7 @@ object ModelImporter {
                 }
 
                 if (kotlin.math.abs(nextZ - curZ) > 0.01f && deltaE <= 0f) {
-                    if (currentLayerSegments.isNotEmpty() && nextZ > currentLayerZ + 0.04f) {
+                    if (!hasLayerChangeMarkers && currentLayerSegments.isNotEmpty() && nextZ > currentLayerZ + 0.04f) {
                         layers.add(
                             SliceLayer(
                                 index = layers.size,
@@ -454,7 +495,7 @@ object ModelImporter {
                         )
                         currentLayerSegments = ArrayList()
                         currentLayerZ = nextZ
-                    } else {
+                    } else if (currentLayerSegments.isEmpty()) {
                         currentLayerZ = nextZ
                     }
                 }

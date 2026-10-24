@@ -333,6 +333,7 @@ class OrcaGlRenderer(
         GLES30.glUseProgram(meshProgram)
         val uMvp = GLES30.glGetUniformLocation(meshProgram, "uMVP")
         val uModel = GLES30.glGetUniformLocation(meshProgram, "uModel")
+        val uScale = GLES30.glGetUniformLocation(meshProgram, "uScale")
         val uBaseColor = GLES30.glGetUniformLocation(meshProgram, "uBaseColor")
         val uSelected = GLES30.glGetUniformLocation(meshProgram, "uSelected")
         val uShowOverhang = GLES30.glGetUniformLocation(meshProgram, "uShowOverhang")
@@ -370,6 +371,7 @@ class OrcaGlRenderer(
             val isSelected = (obj.id == selectedObjectId)
             GLES30.glUniformMatrix4fv(uMvp, 1, false, mvpMatrix, 0)
             GLES30.glUniformMatrix4fv(uModel, 1, false, modelMatrix, 0)
+            GLES30.glUniform3f(uScale, obj.scale.x, obj.scale.y, obj.scale.z)
             GLES30.glUniform3f(uBaseColor, baseRgb[0], baseRgb[1], baseRgb[2])
             GLES30.glUniform1f(uSelected, if (isSelected) 1.0f else 0.0f)
 
@@ -1280,6 +1282,7 @@ class OrcaGlRenderer(
 
             uniform mat4 uMVP;
             uniform mat4 uModel;
+            uniform vec3 uScale;
 
             out vec3 vWorldPos;
             out vec3 vWorldNormal;
@@ -1287,7 +1290,8 @@ class OrcaGlRenderer(
             void main() {
                 vec4 worldPos4 = uModel * vec4(aPosition, 1.0);
                 vWorldPos = worldPos4.xyz;
-                vWorldNormal = normalize(mat3(uModel) * aNormal);
+                vec3 invScale2 = 1.0 / max(uScale * uScale, vec3(0.0001));
+                vWorldNormal = normalize((mat3(uModel) * aNormal) * invScale2);
                 gl_Position = uMVP * vec4(aPosition, 1.0);
             }
         """

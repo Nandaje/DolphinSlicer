@@ -553,4 +553,102 @@ class OrcaSlicerEngineTest {
         assertTrue("Upper cut part should have triangles", upperMesh.triangleCount >= 12)
         assertEquals("Lower cut part height should be 10.0mm", 10.0f, lowerMesh.localBounds.size.z, 0.05f)
     }
+
+    @Test
+    fun `GCode importer handles M82 absolute extrusion and G92 resets accurately`() {
+        val m82GCode = """
+            ; bed_center_x = 100
+            ; bed_center_y = 100
+            G90
+            M82
+            G92 E0
+            ;LAYER_CHANGE
+            ;TYPE:Outer wall
+            G0 X90 Y90 Z0.2 F9000
+            G1 X110 Y90 E1.0 F3000
+            G1 X110 Y110 E2.0 F3000
+            G1 X90 Y110 E3.0 F3000
+            G1 X90 Y90 E4.0 F3000
+            G92 E0
+            G0 X95 Y95 F9000
+            ;TYPE:Inner wall
+            G1 X105 Y95 E0.5 F3000
+        """.trimIndent()
+
+        val imported = ModelImporter.importFromStream(
+            inputStream = ByteArrayInputStream(m82GCode.encodeToByteArray()),
+            fileName = "abs_test.gcode"
+        ).getOrThrow() as ModelImporter.ImportedContent.GCodePreview
+        // Total extrusion is 4.0mm + 0.5mm = 4.5mm (0.0045 meters), NOT 1+2+3+4+0.5 = 10.5mm
+        assertEquals(0.0045f, imported.sliceResult.statistics.filamentLengthMeters, 0.0002f)
+        val extrudingSegs = imported.sliceResult.layers.flatMap { it.segments }
+            .filter { it.type != com.orcaslicer.android.model.ToolpathType.TRAVEL }
+        assertEquals(5, extrudingSegs.size)
+        assertEquals(1.0f, extrudingSegs[0].extrusionMm, 1e-4f)
+        assertEquals(1.0f, extrudingSegs[1].extrusionMm, 1e-4f)
+        assertEquals(0.5f, extrudingSegs[4].extrusionMm, 1e-4f)
+    }
+
+    @Test
+    fun `SlicingEngine honors wallsPrintingOrder, printInfillFirst, XY compensation, and per-object overrides`() = runTest {
+        val cube = SceneObject(
+            id = "override-cube",
+            name = "OverrideCube",
+            sourceFormat = "PRIMITIVE",
+            mesh = ProceduralMeshes.createCalibrationCube(20f),
+            wallLoopsOverride = 4,
+            infillDensityOverride = 30
+        )
+        val printer = BuiltInPresets.printers.first()
+        val filament = BuiltInPresets.filaments.first()
+
+        // 1. Test INNER_OUTER + printInfillFirst = false + per-object wallLoopsOverride = 4
+        val procInnerOuter = BuiltInPresets.processes.first().copy(
+            wallLoops = 2,
+            wallsPrintingOrder = com.orcaslicer.android.model.WallsPrintingOrder.INNER_OUTER,
+            printInfillFirst = false,
+            xyContourCompensationMm = 0.25f,
+            scarfJointSeam = com.orcaslicer.android.model.ScarfSeamType.CONTOUR,
+            seamPosition = com.orcaslicer.android.model.SeamPosition.BACK
+        )
+        val resInnerOuter = SlicingEngine.sliceScene(listOf(cube), printer, filament, procInnerOuter).getOrThrow()
+        val midLayer = resInnerOuter.layers[resInnerOuter.layers.size / 2]
+        val nonTravelTypes = midLayer.segments
+            .map { it.type }
+            .filter { it != com.orcaslicer.android.model.ToolpathType.TRAVEL }
+        val firstInnerIdx = nonTravelTypes.indexOf(com.orcaslicer.android.model.ToolpathType.INNER_WALL)
+        val firstOuterIdx = nonTravelTypes.indexOf(com.orcaslicer.android.model.ToolpathType.OUTER_WALL)
+        val firstSparseIdx = nonTravelTypes.indexOf(com.orcaslicer.android.model.ToolpathType.SPARSE_INFILL)
+        assertTrue("Inner wall must print before outer wall in INNER_OUTER mode", firstInnerIdx in 0 until firstOuterIdx)
+        assertTrue("Walls must print before sparse infill when printInfillFirst is false", firstOuterIdx < firstSparseIdx)
+
+        // 2. Test OUTER_INNER + printInfillFirst = true
+        val procInfillFirst = procInnerOuter.copy(
+            wallsPrintingOrder = com.orcaslicer.android.model.WallsPrintingOrder.OUTER_INNER,
+            printInfillFirst = true,
+            xyContourCompensationMm = -0.25f
+        )
+        val resInfillFirst = SlicingEngine.sliceScene(listOf(cube), printer, filament, procInfillFirst).getOrThrow()
+        val midLayer2 = resInfillFirst.layers[resInfillFirst.layers.size / 2]
+        val nonTravelTypes2 = midLayer2.segments
+            .map { it.type }
+            .filter { it != com.orcaslicer.android.model.ToolpathType.TRAVEL }
+        val firstSparseIdx2 = nonTravelTypes2.indexOf(com.orcaslicer.android.model.ToolpathType.SPARSE_INFILL)
+        val firstOuterIdx2 = nonTravelTypes2.indexOf(com.orcaslicer.android.model.ToolpathType.OUTER_WALL)
+        val firstInnerIdx2 = nonTravelTypes2.indexOf(com.orcaslicer.android.model.ToolpathType.INNER_WALL)
+        assertTrue("Sparse infill must print before walls when printInfillFirst is true", firstSparseIdx2 in 0 until firstOuterIdx2)
+        assertTrue("Outer wall must print before inner wall in OUTER_INNER mode", firstOuterIdx2 < firstInnerIdx2)
+
+        // 3. Verify positive xyContourCompensationMm (+0.25mm) produces wider outer walls than negative (-0.25mm)
+        val maxExpandedX = midLayer.segments
+            .filter { it.type == com.orcaslicer.android.model.ToolpathType.OUTER_WALL }
+            .maxOf { maxOf(it.start.x, it.end.x) }
+        val maxShrunkX = midLayer2.segments
+            .filter { it.type == com.orcaslicer.android.model.ToolpathType.OUTER_WALL }
+            .maxOf { maxOf(it.start.x, it.end.x) }
+        assertTrue(
+            "Positive XY contour compensation ($maxExpandedX) must expand outer contour compared to negative ($maxShrunkX)",
+            maxExpandedX > maxShrunkX + 0.35f
+        )
+    }
 }
