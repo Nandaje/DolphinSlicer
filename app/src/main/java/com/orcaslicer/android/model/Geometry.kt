@@ -11,6 +11,23 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+/**
+ * ============================================================================
+ * Core 3D Math, Mesh Data & Scene Object Model (`Geometry.kt`)
+ * ============================================================================
+ * Defines the foundational geometric types shared by the UI, OpenGL renderer,
+ * file importers, and slicing engine:
+ * - [Vec2] & [Vec3]: Immutable 2D/3D floating-point vectors with dot/cross products.
+ * - [BoundingBox]: Axis-aligned 3D bounding box (`min`, `max`, `size`, `center`).
+ * - [Triangle]: 3D triangle with precomputed unit normal.
+ * - [MeshData]: Immutable triangle soup with packed OpenGL vertex/normal arrays
+ *   and clustered planar face candidates ([LayOnFaceCandidate]) for the `Lay on Face` tool.
+ * - [SceneObject]: A 3D object placed on the build plate with `position`, Euler
+ *   `rotationDeg`, `scale`, world-transform matrix math, and helper methods for
+ *   laying a chosen normal flat on the `Z = 0` bed ([SceneObject.rotationToLayNormalFlat]).
+ * - [ToolpathType], [ToolpathSegment], [SliceLayer], [SliceResult], [PrintStatistics]:
+ *   Output structures produced by [com.orcaslicer.android.slicer.SlicingEngine].
+ */
 data class Vec2(val x: Float, val y: Float) {
     operator fun plus(other: Vec2) = Vec2(x + other.x, y + other.y)
     operator fun minus(other: Vec2) = Vec2(x - other.x, y - other.y)

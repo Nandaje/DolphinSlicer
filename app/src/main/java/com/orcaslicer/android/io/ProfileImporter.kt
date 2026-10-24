@@ -9,6 +9,14 @@ import java.io.InputStream
 import java.util.Locale
 import java.util.UUID
 
+/**
+ * ============================================================================
+ * OrcaSlicer / PrusaSlicer Profile Importer (`ProfileImporter.kt`)
+ * ============================================================================
+ * Imports external `.json`, `.orca_printer`, `.orca_filament`, or `.ini`
+ * configuration files and maps their keys into [PrinterProfile], [FilamentProfile],
+ * or [ProcessProfile].
+ */
 object ProfileImporter {
 
     sealed class ImportedProfile {

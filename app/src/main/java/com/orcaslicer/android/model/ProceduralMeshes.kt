@@ -6,6 +6,20 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
+/**
+ * ============================================================================
+ * Procedural 3D Primitives, Calibration Models & Mesh Cutter (`ProceduralMeshes.kt`)
+ * ============================================================================
+ * Generates watertight 3D triangle meshes in code without external asset files:
+ * 1. **Standard Primitives**: Cube, Cylinder, Sphere, Cone, and Calibration Boat (`OpenVessel`).
+ * 2. **OrcaSlicer Calibration Suite**: Temperature Tower, Flow Rate Coupons,
+ *    Pressure Advance Pattern, Retraction Tower, Max Volumetric Speed, VFA Speed Tower,
+ *    and Tolerance Test.
+ * 3. **Exact World-Space Z-Plane Mesh Cutter ([cutTrianglesAtWorldZ])**:
+ *    Clips every triangle against a horizontal plane `Z = cutZ`, splits spanning
+ *    triangles, and triangulates the intersection loops to cap both the upper
+ *    and lower parts into solid manifold meshes.
+ */
 object ProceduralMeshes {
 
     fun createCalibrationCube(sizeMm: Float = 20f): MeshData {

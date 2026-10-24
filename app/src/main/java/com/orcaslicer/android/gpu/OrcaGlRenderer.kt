@@ -28,6 +28,32 @@ enum class ViewportCameraPreset {
     RIGHT
 }
 
+/**
+ * ============================================================================
+ * OpenGL ES 3.0 3D Viewport Renderer (`OrcaGlRenderer.kt`)
+ * ============================================================================
+ * Hardware-accelerated 3D renderer for both `Prepare` (mesh & gizmo view) and
+ * `Preview` (volumetric 3D extruded G-code toolpath view).
+ *
+ * Coordinate System Convention:
+ * - Uses standard 3D printing **right-handed Z-up** coordinates:
+ *   - `X`: Left (-) to Right (+) across the build plate
+ *   - `Y`: Front (-) to Back (+) across the build plate
+ *   - `Z`: Build plate floor (`0 mm`) upwards (`+Z`)
+ *
+ * Key Rendering Passes & Ray-Picking Helpers:
+ * 1. **Build Plate Grid & Volume Cage**: Draws 10 mm and 50 mm grid lines, X/Y
+ *    origin axes, and printer max-Z wireframe bounds.
+ * 2. **Lit 3D Mesh Shader**: Renders STL/OBJ/3MF meshes with directional Phong
+ *    shading and automatic red overhang highlighting for faces steeper than
+ *    [overhangThresholdDeg].
+ * 3. **Interactive 3D Gizmos**:
+ *    - `MOVE`, `SCALE`, `ROTATE`: Global XYZ axis arrows/handles & ray-hit testing ([pickGizmoAxis]).
+ *    - `CUT`: Translucent cyan Z-cut plane quad + vertical drag handle ([isRayHittingCutHandle]).
+ *    - `LAY_ON_FACE`: OrcaSlicer-style selectable flat face patch candidates rendered on the mesh ([pickLayOnFaceNormal]).
+ * 4. **Volumetric 3D G-Code Preview**: Extrudes each toolpath segment into a 3D
+ *    rectangular bead ribbon (`GL_TRIANGLES`) colored by [com.orcaslicer.android.model.ToolpathType].
+ */
 class OrcaGlRenderer(
     private val onObjectPicked: (String?) -> Unit
 ) : GLSurfaceView.Renderer {

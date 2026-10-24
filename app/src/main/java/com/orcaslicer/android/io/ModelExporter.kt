@@ -12,6 +12,16 @@ import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
+/**
+ * ============================================================================
+ * 3D Model, 3MF Project & G-Code Exporter (`ModelExporter.kt`)
+ * ============================================================================
+ * Handles exporting build-plate scenes and sliced toolpaths to Android storage:
+ * - [exportGCode]: Writes generated `.gcode` text to a user-selected document URI.
+ * - [exportBinaryStl]: Combines all visible build-plate objects into a binary `.stl`.
+ * - [export3mfProject]: Packages build-plate meshes and active Printer/Filament/Process
+ *   settings into a standard `.3mf` ZIP archive (`3D/3dmodel.model`).
+ */
 object ModelExporter {
 
     fun exportGCode(outputStream: OutputStream, gcodeText: String): Result<Unit> {

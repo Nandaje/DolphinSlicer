@@ -1,5 +1,22 @@
 package com.orcaslicer.android.model
 
+/**
+ * ============================================================================
+ * Printer, Filament & Process Profile Data Models (`SlicerProfiles.kt`)
+ * ============================================================================
+ * Defines all 1:1 OrcaSlicer configuration data classes and built-in presets:
+ * - [PrinterProfile]: Build volume (`bedWidthX`, `bedDepthY`, `maxPrintHeightZ`),
+ *   nozzle diameter, retraction, G-code flavor, start/end G-code, and power/hourly cost.
+ * - [FilamentProfile]: Material type (`PLA`, `PETG`, `ABS`, `ASA`, `TPU`, `PA-CF`),
+ *   nozzle/bed temperatures, density, flow ratio, pressure advance, and spool cost.
+ * - [ProcessProfile]: All 6 categories of slicing parameters (`Quality`, `Strength`,
+ *   `Speed`, `Support`, `Multimaterial`, `Others`).
+ * - [BuiltInPresets]: Offline catalog of 56+ popular printers and 51+ filaments.
+ *
+ * Human Maintainer Guide:
+ * - To add a new slicing setting, add the field with a default value to [ProcessProfile],
+ *   expose a UI control in `OrcaSettingsPanels.kt`, and read it in `SlicingEngine.kt`.
+ */
 enum class GCodeFlavor(val label: String) {
     BAMBU("Bambu / Orca"),
     KLIPPER("Klipper"),

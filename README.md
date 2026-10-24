@@ -43,6 +43,41 @@
 
 ---
 
+## 🗂️ Repository Structure & Maintainer Guide
+
+The codebase is organized into clean, modular Kotlin packages with comprehensive KDoc comments so any developer can maintain or extend it manually without needing AI tools. See [**docs/ARCHITECTURE.md**](docs/ARCHITECTURE.md) for the full step-by-step developer guide.
+
+```text
+app/src/main/java/com/orcaslicer/android/
+├── MainActivity.kt               # Android entry point, SharedPreferences init, & file URI intents
+├── gpu/                          # Hardware-accelerated OpenGL ES 3.0 3D engine
+│   ├── OrcaGlRenderer.kt         # Shaders, build plate grid, 3D mesh, gizmos, & G-code ribbons
+│   └── OrcaGlViewport.kt         # Multi-touch gesture handler (orbit, pan, zoom, gizmo drag)
+├── io/                           # 3D model & profile importers/exporters
+│   ├── ModelImporter.kt          # Binary/ASCII STL, Wavefront OBJ, 3MF ZIP, & G-code reader
+│   ├── ModelExporter.kt          # G-code writer, Binary STL exporter, & 3MF project archiver
+│   └── ProfileImporter.kt        # OrcaSlicer / PrusaSlicer .json & .ini profile importer
+├── model/                        # Core data structures, 3D math, & built-in presets
+│   ├── Geometry.kt               # Vec2, Vec3, Triangle, MeshData, SceneObject, SliceResult
+│   ├── ProceduralMeshes.kt       # Primitives, Calibration models, & Z-plane mesh cutter
+│   └── SlicerProfiles.kt         # PrinterProfile, FilamentProfile, ProcessProfile, BuiltInPresets
+├── network/                      # LAN printer control & GitHub profile sync
+│   ├── PrinterNetworkClient.kt   # Moonraker (Klipper) & OctoPrint REST upload/telemetry
+│   └── OrcaServerProfileSync.kt  # Fetches official vendor profiles from OrcaSlicer GitHub
+├── slicer/                       # Core 3D-to-GCode slicing engine
+│   └── SlicingEngine.kt          # Two-pass parallel contour, wall, skin, infill, & support engine
+└── ui/                           # Modular Jetpack Compose UI screens & ViewModel
+    ├── OrcaTheme.kt              # Centralized dark-charcoal & Dolphin Azure color palette
+    ├── OrcaViewModel.kt          # Single source of truth (OrcaUiState) & user actions
+    ├── OrcaSlicerScreen.kt       # Main responsive screen, 3D viewport overlays, & bottom drawer
+    ├── OrcaSettingsPanels.kt     # Reusable parameter rows & 6-tab Process Settings suite
+    ├── OrcaProfileModals.kt      # Printer/Filament browsers, editors, & Calibration panel
+    ├── DeviceNetworkPanel.kt     # Embedded Klipper WebView browser & Cost Calculator cards
+    └── KlipperWebUiTemplates.kt  # Built-in fallback Fluidd/Mainsail HTML templates
+```
+
+---
+
 ## 🛠️ Building from Source
 
 ```bash

@@ -33,6 +33,19 @@ import java.util.UUID
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
+/**
+ * ============================================================================
+ * Central Application State & Actions ViewModel (`OrcaViewModel.kt`)
+ * ============================================================================
+ * Single source of truth ([OrcaUiState]) for DolphinSlicer. Coordinates:
+ * - Build plate scene objects (add primitive, import STL/OBJ/3MF, move, scale,
+ *   rotate, lay on face, cut at Z, mirror, auto-arrange, clone, delete).
+ * - Active Printer, Filament, and Process profiles + live GitHub profile sync.
+ * - Background multi-threaded slicing execution ([SlicingEngine.slicePlate])
+ *   with live pass/layer progress reporting and cancellation.
+ * - Persistent network printer settings (`SharedPreferences("dolphin_slicer_prefs")`)
+ *   and direct G-code upload over Wi-Fi.
+ */
 enum class WorkspaceTab(val title: String) {
     PREPARE("Prepare"),
     PREVIEW("Preview"),

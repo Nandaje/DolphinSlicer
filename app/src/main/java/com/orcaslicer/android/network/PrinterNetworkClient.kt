@@ -23,6 +23,16 @@ data class PrinterTelemetry(
     val statusMessage: String
 )
 
+/**
+ * ============================================================================
+ * Moonraker (Klipper) & OctoPrint REST API Client (`PrinterNetworkClient.kt`)
+ * ============================================================================
+ * Provides direct LAN HTTP communication with network 3D printers:
+ * - [queryPrinterStatus]: Queries live nozzle/bed temperatures, target temps,
+ *   and job progress from Moonraker (`/printer/objects/query`) or OctoPrint (`/api/printer`).
+ * - [uploadGCode]: Uploads sliced `.gcode` via `multipart/form-data` and optionally
+ *   starts the print job immediately.
+ */
 object PrinterNetworkClient {
 
     suspend fun queryPrinterStatus(

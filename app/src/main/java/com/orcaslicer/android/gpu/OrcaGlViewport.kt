@@ -19,6 +19,19 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
+/**
+ * ============================================================================
+ * Multi-Touch OpenGL ES 3.0 SurfaceView & Compose Bridge (`OrcaGlViewport.kt`)
+ * ============================================================================
+ * Wraps [OrcaGlRenderer] in an Android [GLSurfaceView] and translates touch
+ * gestures into 3D camera or object operations:
+ * - **1-Finger Drag on Empty Space**: Orbits camera yaw & pitch around the build plate.
+ * - **1-Finger Drag on Active Gizmo Axis**: Translates (`MOVE`), scales (`SCALE`),
+ *   rotates (`ROTATE`), or slides the Z-cut plane (`CUT`) along global XYZ axes.
+ * - **2-Finger Pinch & Drag**: Zooms camera distance and pans the camera target.
+ * - **Single Tap**: Ray-casts into the 3D scene to select an object or pick a
+ *   `Lay on Face` planar surface patch.
+ */
 class OrcaGlSurfaceView(
     context: Context,
     onObjectSelected: (String?) -> Unit

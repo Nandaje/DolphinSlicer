@@ -22,6 +22,17 @@ import kotlin.math.PI
 import kotlin.math.max
 import kotlin.math.min
 
+/**
+ * ============================================================================
+ * 3D Mesh & G-Code File Importer (`ModelImporter.kt`)
+ * ============================================================================
+ * Safely parses incoming 3D model and toolpath files with strict memory and
+ * triangle count bounds ([MAX_FILE_BYTES] = 120 MB, [MAX_TRIANGLES] = 1.5M):
+ * - `.stl` (Binary & ASCII auto-detection)
+ * - `.obj` (Wavefront vertices `v` and polygon faces `f` with fan triangulation)
+ * - `.3mf` (ZIP archive extraction of `<mesh><vertices><triangles>` XML)
+ * - `.gcode` / `.gco` (Direct G-code toolpath parser for 3D layer preview)
+ */
 object ModelImporter {
 
     private const val MAX_FILE_BYTES = 120 * 1024 * 1024 // 120 MB safety cap

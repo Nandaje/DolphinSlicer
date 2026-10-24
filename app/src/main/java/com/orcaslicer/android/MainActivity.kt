@@ -8,6 +8,16 @@ import androidx.activity.viewModels
 import com.orcaslicer.android.ui.OrcaSlicerScreen
 import com.orcaslicer.android.ui.OrcaViewModel
 
+/**
+ * ============================================================================
+ * Android Entry Point (`MainActivity.kt`)
+ * ============================================================================
+ * Hosts the single-activity Jetpack Compose UI ([OrcaSlicerScreen]) and wires:
+ * 1. Persistent user preferences (`dolphin_slicer_prefs`) via [OrcaViewModel.initPreferences]
+ *    so the printer's IP address, port, and web URL are restored on startup.
+ * 2. Incoming Android `ACTION_VIEW` file intents (`.stl`, `.3mf`, `.obj`, `.gcode`)
+ *    opened from system file managers or browser downloads.
+ */
 class MainActivity : ComponentActivity() {
 
     private val viewModel: OrcaViewModel by viewModels()

@@ -43,6 +43,45 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tan
 
+/**
+ * ============================================================================
+ * Two-Pass Multi-Threaded 3D Slicing Engine (`SlicingEngine.kt`)
+ * ============================================================================
+ * Converts 3D build-plate triangle meshes ([SceneObject]) into layered 2D
+ * toolpaths ([SliceLayer]) and machine-ready G-code ([SliceResult]).
+ *
+ * Architecture & Pipeline Overview (for human maintainers):
+ * ----------------------------------------------------------------------------
+ * - **Pass 1 (Parallel per-layer Z-plane contour & wall extraction)**:
+ *   1. `intersectTrianglesAtZ`: Intersects all world-space mesh triangles with
+ *      the horizontal slice plane at `sliceZ` (in mm) to produce raw 2D line segments.
+ *   2. `chainSegmentsIntoPolygons` + `cleanAndSimplifyPolygon`: Stitches raw segments
+ *      into closed, counter-clockwise 2D polygon contours and simplifies collinear noise.
+ *   3. `offsetPolygonInward`: Insets each outer contour repeatedly by `wallLineWidth`
+ *      to generate `Outer Wall`, `Inner Wall` loops, and the `innermostBoundary`
+ *      region reserved for skin/infill.
+ *
+ * - **Pass 2 (Parallel per-layer skin, infill, support & travel generation)**:
+ *   1. **Top & Bottom Horizontal Shells (`isHorizontalSkin` / `hasLocalRoofOrFloor`)**:
+ *      Compares the current layer's contours against layers above (`topShellLayers`)
+ *      and below (`bottomShellLayers`) to detect both full top/bottom layers AND
+ *      intermediate horizontal roofs/steps (such as Benchy decks and roofs).
+ *   2. **Internal Solid & Sparse Infill (`generateClippedInfillSegments`)**:
+ *      Clips infill patterns (`Gyroid`, `Grid`, `Honeycomb`, `Adaptive Cubic`,
+ *      `Triangles`, `Tri-Hexagon`, `Rectilinear`, `Concentric`, `Cross Hatch`,
+ *      `Lightning`) strictly inside the polygon's `innermostBoundary` using
+ *      even-odd ray-casting (`computePolygonScanlineIntervals`).
+ *   3. **Support Structures (`Normal Grid` & `Tree Organic`)**:
+ *      Detects overhang regions exceeding `supportThresholdAngleDeg` and builds
+ *      either rectilinear grid columns or organic branching tree trunks.
+ *   4. **Combed Travel & Seam Alignment (`computeCuraCombedTravel`)**:
+ *      Routes non-extruding travel moves inside part boundaries to prevent stringing,
+ *      and applies optional Scarf Joint Seam ramping.
+ *   5. **G-Code & Cost Statistics (`generateGCodeAndStats`)**:
+ *      Serializes all layers into dialect-specific G-code (`Klipper`, `Bambu`,
+ *      `Marlin`, `Prusa`, `RepRap`) and calculates exact filament length, weight,
+ *      print time, and production cost.
+ */
 object SlicingEngine {
 
     private data class Segment2D(val a: Vec2, val b: Vec2)
