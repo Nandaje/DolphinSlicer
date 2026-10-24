@@ -1157,6 +1157,38 @@ private fun OrcaMobileReferenceHeader(
                                 color = Color(0xFF0D0E12)
                             )
                         }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Don't forget to also donate to the OrcaSlicer Team on Ko-fi so DolphinSlicer can grow as big as OrcaSlicer develops too!",
+                            fontSize = 10.5.sp,
+                            color = OrcaTextSecondary
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFFF5E5B))
+                                .clickable {
+                                    runCatching {
+                                        uriContext.startActivity(
+                                            android.content.Intent(
+                                                android.content.Intent.ACTION_VIEW,
+                                                android.net.Uri.parse("https://ko-fi.com/G2G5IP3CP")
+                                            )
+                                        )
+                                    }
+                                }
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "🐋 Support OrcaSlicer Team — ko-fi.com/G2G5IP3CP",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White
+                            )
+                        }
                     }
 
                     Button(

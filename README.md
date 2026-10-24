@@ -73,6 +73,13 @@ If you find **DolphinSlicer** useful for your 3D printing workflow, consider sup
 
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/nandaje)
 
-- **Buy Me a Coffee**: [https://buymeacoffee.com/nandaje](https://buymeacoffee.com/nandaje)
+- **Buy Me a Coffee (@Nandaje)**: [https://buymeacoffee.com/nandaje](https://buymeacoffee.com/nandaje)
+
+### 🐋 Don't Forget to Support the Official OrcaSlicer Team!
+Don't forget to also give a donation to the official **[OrcaSlicer Team on Ko-fi](https://ko-fi.com/G2G5IP3CP)** so **DolphinSlicer** can grow as big and powerful as **OrcaSlicer** as they continue to develop!
+
+[![Support OrcaSlicer on Ko-fi](https://img.shields.io/badge/Support_OrcaSlicer_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/G2G5IP3CP)
+
+- **OrcaSlicer Official Ko-fi**: [https://ko-fi.com/G2G5IP3CP](https://ko-fi.com/G2G5IP3CP)
 
 
