@@ -1090,7 +1090,7 @@ private fun OrcaMobileReferenceHeader(
                         HorizontalDivider(color = OrcaBorder)
                         Column {
                             Text(
-                                text = "Credits: OrcaSlicer • PrusaSlicer • SuperSlicer",
+                                text = "Credits: OrcaSlicer • PrusaSlicer • SuperSlicer • CuraSlicer",
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = OrcaTealBright

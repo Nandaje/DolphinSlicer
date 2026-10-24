@@ -60,6 +60,7 @@ The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk`.
 - **[OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer)** — UI/UX workflow, calibration tools, scarf seam concepts, and official printer & filament profile catalogs.
 - **[PrusaSlicer](https://github.com/prusa3d/PrusaSlicer)** — Foundational slicing architecture, perimeter/infill path generation principles, and 3MF ecosystem standards.
 - **[SuperSlicer](https://github.com/supermerill/SuperSlicer)** — Advanced print calibration, fine-grained process parameter tuning, and community slicer innovations.
+- **[UltiMaker Cura](https://github.com/Ultimaker/Cura)** *(CuraSlicer / CuraEngine)* — Arachne variable-width perimeter concepts, tree support inspirations, and open-source 3D printing foundations.
 
 ---
 
